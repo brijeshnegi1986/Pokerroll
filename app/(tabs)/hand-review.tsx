@@ -8,6 +8,7 @@ import {
   ActivityIndicator, Dimensions, KeyboardAvoidingView, Modal,
   Platform, ScrollView, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -669,6 +670,9 @@ function HistoryModal({ visible, onClose, colors, radius }: {
 
 export default function HandReviewScreen() {
   const { colors, radius } = usePokerTheme();
+  const insets = useSafeAreaInsets();
+  // Tab bar sits at bottom: (insets.bottom || 16), height ≈ 68px
+  const TAB_BAR_H = (insets.bottom > 0 ? insets.bottom : 16) + 68;
 
   // ── Hand state ──
   const [numPlayers, setNumPlayers] = useState(6);
@@ -917,7 +921,7 @@ export default function HandReviewScreen() {
 
       <ScrollView
         style={{ flex:1, backgroundColor: colors.bg.primary }}
-        contentContainerStyle={{ padding:16, paddingBottom:120 }}
+        contentContainerStyle={{ padding:16, paddingBottom: TAB_BAR_H + 80 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -1132,10 +1136,10 @@ export default function HandReviewScreen() {
 
       {/* ── Bottom navigation ── */}
       <View style={{
-        position:"absolute", bottom:0, left:0, right:0,
+        position:"absolute", bottom: TAB_BAR_H, left:0, right:0,
         backgroundColor: colors.bg.primary,
         borderTopWidth:1, borderColor: colors.border.default,
-        paddingHorizontal:16, paddingTop:12, paddingBottom:Platform.OS==="ios" ? 34 : 16,
+        paddingHorizontal:16, paddingTop:12, paddingBottom:12,
         flexDirection:"row", gap:12,
       }}>
         <View style={{ flexDirection:"row", gap:8 }}>
