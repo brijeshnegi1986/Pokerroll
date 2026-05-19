@@ -32,19 +32,6 @@ export const initDB = () => {
   try { db.execSync(`ALTER TABLE sessions ADD COLUMN notes TEXT`); } catch (_) {}
   try { db.execSync(`ALTER TABLE sessions ADD COLUMN rebuys TEXT DEFAULT '[]'`); } catch (_) {}
 
-  // Hand review history
-  db.execSync(`
-    CREATE TABLE IF NOT EXISTS hand_reviews (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      created_at INTEGER NOT NULL,
-      hole_cards TEXT NOT NULL,
-      position TEXT NOT NULL,
-      num_players INTEGER NOT NULL,
-      stack_display TEXT,
-      result_json TEXT NOT NULL,
-      overall_grade TEXT NOT NULL
-    );
-  `);
 
   // Settings key-value store
   db.execSync(`
@@ -355,45 +342,6 @@ export const clearAllSessions = (): void => {
   db.runSync(`DELETE FROM sessions WHERE ${COMPLETED}`);
 };
 
-// ─── Hand Review History ──────────────────────────────────────────────────────
-
-export type HandReview = {
-  id: number;
-  created_at: number;
-  hole_cards: string;
-  position: string;
-  num_players: number;
-  stack_display: string;
-  result_json: string;
-  overall_grade: string;
-};
-
-export const addHandReview = (data: {
-  holeCards: string;
-  position: string;
-  numPlayers: number;
-  stackDisplay: string;
-  resultJson: string;
-  overallGrade: string;
-}): void => {
-  db.runSync(
-    `INSERT INTO hand_reviews
-       (created_at, hole_cards, position, num_players, stack_display, result_json, overall_grade)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [Date.now(), data.holeCards, data.position, data.numPlayers,
-     data.stackDisplay, data.resultJson, data.overallGrade]
-  );
-};
-
-export const getHandReviews = (limit = 30): HandReview[] => {
-  return db.getAllSync(
-    `SELECT * FROM hand_reviews ORDER BY created_at DESC LIMIT ?`, [limit]
-  ) as HandReview[];
-};
-
-export const deleteHandReview = (id: number): void => {
-  db.runSync(`DELETE FROM hand_reviews WHERE id = ?`, [id]);
-};
 
 // Auto-initialize on import so getSetting is always safe to call
 initDB();
