@@ -15,13 +15,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const VISIBLE_TABS = ["index", "history", "hand-review", "settings"] as const;
+const VISIBLE_TABS = ["index", "history", "hand-review", "ranges", "settings"] as const;
 type VisibleTab = (typeof VISIBLE_TABS)[number];
 
 const TAB_CONFIG: Record<VisibleTab, { icon: keyof typeof MaterialCommunityIcons.glyphMap; label: string }> = {
-  index:         { icon: "home-variant",       label: "Home"    },
+  index:         { icon: "home-variant",       label: "Home"     },
   history:       { icon: "history",            label: "Sessions" },
-  "hand-review": { icon: "cards-playing",      label: "Review"  },
+  "hand-review": { icon: "cards-playing",      label: "Review"   },
+  ranges:        { icon: "grid",               label: "Ranges"   },
   settings:      { icon: "cog-outline",        label: "Settings" },
 };
 
@@ -81,8 +82,8 @@ export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 
   // Indicator slides to the left edge of each tab, inset adds the spacing inside
   const indicatorX = indicatorAnim.interpolate({
-    inputRange: [0, 1, 2, 3],
-    outputRange: [0, tabWidth, tabWidth * 2, tabWidth * 3],
+    inputRange: [0, 1, 2, 3, 4],
+    outputRange: [0, tabWidth, tabWidth * 2, tabWidth * 3, tabWidth * 4],
   });
 
   const openLive = () => { setActionSheetVisible(false); router.push("/live"); };
