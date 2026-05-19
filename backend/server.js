@@ -1,28 +1,29 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const fetch = require("node-fetch");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
 if (!ANTHROPIC_API_KEY) {
-  console.error("ERROR: ANTHROPIC_API_KEY is not set in environment variables.");
-  process.exit(1);
+  console.warn("WARNING: ANTHROPIC_API_KEY is not set. /api/analyze will return 500.");
 }
 
 app.use(cors());
 app.use(express.json());
 
-// Health check
 app.get("/", (req, res) => {
-  res.json({ status: "ok", service: "PokerTracker AI Proxy" });
+  res.json({ status: "ok", service: "PokerTracker AI Proxy", keySet: !!ANTHROPIC_API_KEY });
 });
 
-// Hand analysis endpoint
 app.post("/api/analyze", async (req, res) => {
-  const { userMessage } = req.body;
+  if (!ANTHROPIC_API_KEY) {
+    return res.status(500).json({ error: "ANTHROPIC_API_KEY is not configured on the server." });
+  }
 
+  const { userMessage } = req.body;
   if (!userMessage || typeof userMessage !== "string") {
     return res.status(400).json({ error: "userMessage is required" });
   }
@@ -32,6 +33,7 @@ app.post("/api/analyze", async (req, res) => {
 Only include streets that were actually played. Grades: A = excellent, B = good, C = marginal, D = mistake.`;
 
   try {
+    console.log("Calling Anthropic API...");
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -47,23 +49,27 @@ Only include streets that were actually played. Grades: A = excellent, B = good,
       }),
     });
 
+    const responseText = await response.text();
+    console.log("Anthropic status:", response.status);
+
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      console.error("Anthropic error:", err);
-      return res.status(response.status).json({
-        error: err?.error?.message ?? `Anthropic API error ${response.status}`,
-      });
+      console.error("Anthropic error body:", responseText);
+      let errMsg = `Anthropic API error ${response.status}`;
+      try { errMsg = JSON.parse(responseText)?.error?.message ?? errMsg; } catch (_) {}
+      return res.status(response.status).json({ error: errMsg });
     }
 
-    const data = await response.json();
+    const data = JSON.parse(responseText);
     const text = data.content?.[0]?.text ?? "";
+    console.log("Anthropic response received, length:", text.length);
     res.json({ text });
   } catch (err) {
-    console.error("Server error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    console.error("Server error:", err.message);
+    res.status(500).json({ error: "Internal server error: " + err.message });
   }
 });
 
 app.listen(PORT, () => {
   console.log(`PokerTracker AI proxy running on port ${PORT}`);
+  console.log(`API key set: ${!!ANTHROPIC_API_KEY}`);
 });

@@ -1,11 +1,11 @@
-import { usePokerTheme } from "@/hooks/use-poker-theme";
 import { BACKEND_URL } from "@/constants/config";
-import type { ReactNode } from "react";
+import { usePokerTheme } from "@/hooks/use-poker-theme";
+import { PokerRollLogo } from "@/components/PokerRollLogo";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import type { ReactNode } from "react";
 import { useState } from "react";
 import {
   ActivityIndicator,
-  Animated,
   Dimensions,
   Modal,
   ScrollView,
@@ -22,195 +22,179 @@ type Rank = "A" | "K" | "Q" | "J" | "T" | "9" | "8" | "7" | "6" | "5" | "4" | "3
 type Card = `${Rank}${Suit}` | null;
 type ActionType = "Fold" | "Check" | "Call" | "Raise" | "Bet" | "All-in";
 type Position = "UTG" | "UTG+1" | "MP" | "HJ" | "CO" | "BTN" | "SB" | "BB";
-type SlotKey =
-  | "hole1" | "hole2"
-  | "flop1" | "flop2" | "flop3"
-  | "turn" | "river";
+type StackMode = "BB" | "$";
+type SlotKey = "hole1" | "hole2" | "flop1" | "flop2" | "flop3" | "turn" | "river";
 
-interface StreetAction { type: ActionType; amount: string; }
+interface ActionItem {
+  id: string;
+  player: string;
+  type: ActionType;
+  amount: string;
+}
 interface StreetAnalysis {
-  heroAction: string;
-  assessment: string;
-  suggestion: string;
-  reasoning: string;
+  heroAction: string; assessment: string; suggestion: string; reasoning: string;
   grade: "A" | "B" | "C" | "D";
 }
 interface AIResult {
-  preflop?: StreetAnalysis;
-  flop?: StreetAnalysis;
-  turn?: StreetAnalysis;
-  river?: StreetAnalysis;
-  summary: string;
+  preflop?: StreetAnalysis; flop?: StreetAnalysis;
+  turn?: StreetAnalysis; river?: StreetAnalysis; summary: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const RANKS: Rank[] = ["A","K","Q","J","T","9","8","7","6","5","4","3","2"];
 const SUITS: Suit[] = ["s","h","d","c"];
-const SUIT_SYMBOLS: Record<Suit, string> = { s: "♠", h: "♥", d: "♦", c: "♣" };
-const POSITIONS: Position[] = ["UTG", "UTG+1", "MP", "HJ", "CO", "BTN", "SB", "BB"];
-const ACTIONS: ActionType[] = ["Fold", "Check", "Call", "Raise", "Bet", "All-in"];
+const SUIT_SYMBOLS: Record<Suit,string> = { s:"♠", h:"♥", d:"♦", c:"♣" };
+const POSITIONS: Position[] = ["UTG","UTG+1","MP","HJ","CO","BTN","SB","BB"];
+const ACTIONS: ActionType[] = ["Fold","Check","Call","Raise","Bet","All-in"];
 
-// Positions available for each player count (clockwise table order: BTN first)
 const POSITIONS_BY_COUNT: Record<number, Position[]> = {
-  2: ["BTN", "BB"],
-  3: ["BTN", "SB", "BB"],
-  4: ["CO", "BTN", "SB", "BB"],
-  5: ["UTG", "CO", "BTN", "SB", "BB"],
-  6: ["UTG", "HJ", "CO", "BTN", "SB", "BB"],
-  7: ["UTG", "UTG+1", "HJ", "CO", "BTN", "SB", "BB"],
-  8: ["UTG", "UTG+1", "MP", "HJ", "CO", "BTN", "SB", "BB"],
-  9: ["UTG", "UTG+1", "MP", "HJ", "CO", "BTN", "SB", "BB"],
+  2: ["BTN","BB"],
+  3: ["BTN","SB","BB"],
+  4: ["CO","BTN","SB","BB"],
+  5: ["UTG","CO","BTN","SB","BB"],
+  6: ["UTG","HJ","CO","BTN","SB","BB"],
+  7: ["UTG","UTG+1","HJ","CO","BTN","SB","BB"],
+  8: ["UTG","UTG+1","MP","HJ","CO","BTN","SB","BB"],
+  9: ["UTG","UTG+1","MP","HJ","CO","BTN","SB","BB"],
 };
 
 const SCREEN_W = Dimensions.get("window").width;
-const TABLE_W = Math.min(SCREEN_W - 48, 360);
-const TABLE_H = TABLE_W * 0.52;
-const SEAT_W = 64;
-const SEAT_H = 72;
+
+// ─── Table layout ─────────────────────────────────────────────────────────────
+// Seats sit with their centres on the table ellipse edge.
+// At the left/right extreme (angle 0°), seat centre = cx + rx = cx + tableW/2.
+// Seat right edge = cx + tableW/2 + seatW/2.
+// Setting containerW = tableW + seatW guarantees the seat edge equals containerW.
+// tableW = SCREEN_W - screenPadding - seatW to fill the screen.
+
+const SEAT_W = 54;   // fixed seat width — position badge + 2 card backs
+const SEAT_H = 68;   // fixed seat height
+const SCREEN_PAD = 32; // 16px scroll padding each side
+
+function getTableLayout() {
+  const tableW = SCREEN_W - SCREEN_PAD - SEAT_W;   // fills available width
+  const tableH = Math.round(tableW * 0.50);          // nice oval ratio
+  const rx = tableW / 2;
+  const ry = tableH / 2;
+  const containerW = tableW + SEAT_W;               // exact fit (no overflow)
+  const containerH = tableH + SEAT_H;               // same logic vertically
+  return { tableW, tableH, rx, ry, containerW, containerH };
+}
+
+// Returns {x, y} offset from the container centre for seat i out of n.
+// Hero is at the bottom (π/2); clockwise = increasing angle in screen coords.
+function seatOffset(i: number, n: number, rx: number, ry: number) {
+  const angle = Math.PI / 2 + i * (2 * Math.PI / n);
+  return { x: rx * Math.cos(angle), y: ry * Math.sin(angle) };
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function isRed(suit: Suit) { return suit === "h" || suit === "d"; }
-
-function parseCard(c: Card): { rank: Rank; suit: Suit } | null {
+function parseCard(c: Card) {
   if (!c) return null;
   return { rank: c[0] as Rank, suit: c[1] as Suit };
 }
 
-function allSelectedCards(
-  holeCards: [Card, Card],
-  flop: [Card, Card, Card],
-  turn: Card,
-  river: Card
-): string[] {
-  return [holeCards[0], holeCards[1], flop[0], flop[1], flop[2], turn, river]
-    .filter(Boolean) as string[];
+function allSelectedCards(h: [Card,Card], f: [Card,Card,Card], t: Card, r: Card): string[] {
+  return [h[0],h[1],f[0],f[1],f[2],t,r].filter(Boolean) as string[];
 }
 
-// Returns seat labels clockwise starting from hero
-function getTablePositions(heroPos: Position, numPlayers: number): string[] {
+// Returns seat labels [hero, villain1, villain2, …] respecting manual overrides.
+function computeSeatLabels(
+  heroPos: Position,
+  numPlayers: number,
+  overrides: Record<number, Position>
+): string[] {
   const pool = POSITIONS_BY_COUNT[numPlayers] ?? POSITIONS_BY_COUNT[6];
   const heroIdx = pool.indexOf(heroPos);
-  if (heroIdx === -1) return pool;
-  const result: string[] = [];
-  for (let i = 0; i < numPlayers; i++) {
-    result.push(pool[(heroIdx + i) % pool.length]);
-  }
-  return result;
+  return Array.from({ length: numPlayers }, (_, i) => {
+    if (i === 0) return heroPos;
+    if (overrides[i]) return overrides[i];
+    return pool[(heroIdx + i) % pool.length];
+  });
 }
 
-// Returns {x, y} relative to table center for each seat index
-function seatPosition(idx: number, total: number) {
-  const rx = TABLE_W / 2 + 28;
-  const ry = TABLE_H / 2 + 24;
-  // Hero at bottom (PI/2), others clockwise (increasing angle in screen-y-down coords)
-  const angle = Math.PI / 2 + idx * ((2 * Math.PI) / total);
-  return {
-    x: rx * Math.cos(angle),
-    y: ry * Math.sin(angle),
-  };
+function gradeColor(g: string, c: any) {
+  return g === "A" ? c.bg.success : g === "B" ? "#3b82f6" : g === "C" ? c.bg.warning : c.bg.danger;
 }
 
-function gradeColor(grade: string, colors: any): string {
-  switch (grade) {
-    case "A": return colors.bg.success;
-    case "B": return "#3b82f6";
-    case "C": return colors.bg.warning;
-    case "D": return colors.bg.danger;
-    default:  return colors.bg.brand;
-  }
+function newAction(player: "Hero" | "Villain"): ActionItem {
+  return { id: `${Date.now()}-${Math.random()}`, player, type: "Check", amount: "" };
+}
+
+function stackInBB(size: string, mode: StackMode, bbDollars: string): number {
+  const val = parseFloat(size) || 0;
+  return mode === "BB" ? val : Math.round(val / (parseFloat(bbDollars) || 1));
 }
 
 function buildUserMessage(
-  holeCards: [Card, Card],
-  position: Position,
-  stackSize: string,
-  numPlayers: number,
-  flop: [Card, Card, Card],
-  turn: Card,
-  river: Card,
-  actions: Record<string, StreetAction>
+  holeCards: [Card,Card], position: Position, stackBB: number,
+  numPlayers: number, seatLabels: string[],
+  flop: [Card,Card,Card], turn: Card, river: Card,
+  streetActions: Record<string, ActionItem[]>
 ): string {
-  const hero = `Hero: [${holeCards[0] ?? "??"} ${holeCards[1] ?? "??"}] | Position: ${position} | Stack: ${stackSize}BB | Villains: ${numPlayers - 1}`;
-  const pre = `Preflop action: ${actions.preflop.type}${actions.preflop.amount ? ` ${actions.preflop.amount}BB` : ""}`;
-  const lines = [hero, pre];
-  if (flop[0] && flop[1] && flop[2]) {
-    lines.push(`Flop: [${flop[0]} ${flop[1]} ${flop[2]}] | Flop action: ${actions.flop.type}${actions.flop.amount ? ` ${actions.flop.amount}BB` : ""}`);
-  }
-  if (turn) {
-    lines.push(`Turn: [${turn}] | Turn action: ${actions.turn.type}${actions.turn.amount ? ` ${actions.turn.amount}BB` : ""}`);
-  }
-  if (river) {
-    lines.push(`River: [${river}] | River action: ${actions.river.type}${actions.river.amount ? ` ${actions.river.amount}BB` : ""}`);
-  }
+  const fmt = (items: ActionItem[]) =>
+    items.map(a => `${a.player} ${a.type}${a.amount ? ` ${a.amount}BB` : ""}`).join(" → ");
+  const villainInfo = seatLabels.slice(1).map((pos, i) => `Villain ${i+1} (${pos})`).join(", ");
+  const lines = [
+    `Hero: [${holeCards[0]??'??'} ${holeCards[1]??'??'}] | Position: ${position} | Stack: ${stackBB}BB`,
+    `Villains: ${numPlayers-1} — ${villainInfo}`,
+    `Preflop: ${fmt(streetActions.preflop)}`,
+  ];
+  if (flop[0] && flop[1] && flop[2])
+    lines.push(`Flop: [${flop[0]} ${flop[1]} ${flop[2]}] | ${fmt(streetActions.flop)}`);
+  if (turn)
+    lines.push(`Turn: [${turn}] | ${fmt(streetActions.turn)}`);
+  if (river)
+    lines.push(`River: [${river}] | ${fmt(streetActions.river)}`);
   return lines.join("\n");
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Card chips ───────────────────────────────────────────────────────────────
 
-function CardChip({ card, onPress, colors }: { card: Card; onPress?: () => void; colors: any }) {
-  const parsed = parseCard(card);
-  const Wrap = onPress ? TouchableOpacity : View;
+function TableCard({ card, size, onPress }: { card: Card; size: number; onPress?: () => void }) {
+  const p = parseCard(card);
+  const w = size; const h = size * 1.36;
+  const Wrap: any = onPress ? TouchableOpacity : View;
   return (
-    <Wrap
-      onPress={onPress}
-      activeOpacity={0.8}
+    <Wrap onPress={onPress} activeOpacity={0.8}
       style={{
-        width: 36,
-        height: 48,
-        borderRadius: 5,
-        backgroundColor: parsed ? "#ffffff" : "transparent",
-        borderWidth: parsed ? 0 : 1.5,
-        borderStyle: parsed ? "solid" : "dashed",
-        borderColor: parsed ? "transparent" : "rgba(255,255,255,0.35)",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      {parsed ? (
+        width: w, height: h, borderRadius: 3,
+        backgroundColor: p ? "#fff" : "transparent",
+        borderWidth: 1.5, borderStyle: p ? "solid" : "dashed",
+        borderColor: p ? "transparent" : "rgba(255,255,255,0.4)",
+        alignItems: "center", justifyContent: "center",
+      }}>
+      {p && (
         <View style={{ alignItems: "center" }}>
-          <Text style={{ fontSize: 14, fontWeight: "800", color: isRed(parsed.suit) ? "#dc2626" : "#1e293b", lineHeight: 16 }}>
-            {parsed.rank}
-          </Text>
-          <Text style={{ fontSize: 11, fontWeight: "700", color: isRed(parsed.suit) ? "#dc2626" : "#1e293b", lineHeight: 13 }}>
-            {SUIT_SYMBOLS[parsed.suit]}
-          </Text>
+          <Text style={{ fontSize: size * 0.38, fontWeight: "800", lineHeight: size * 0.44, color: isRed(p.suit) ? "#dc2626" : "#1e293b" }}>{p.rank}</Text>
+          <Text style={{ fontSize: size * 0.3, fontWeight: "700", lineHeight: size * 0.36, color: isRed(p.suit) ? "#dc2626" : "#1e293b" }}>{SUIT_SYMBOLS[p.suit]}</Text>
         </View>
-      ) : null}
+      )}
     </Wrap>
   );
 }
 
 function FormCardSlot({ card, onPress, colors }: { card: Card; onPress: () => void; colors: any }) {
-  const parsed = parseCard(card);
+  const p = parseCard(card);
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.75}
+    <TouchableOpacity onPress={onPress} activeOpacity={0.75}
       style={{
-        width: 44,
-        height: 58,
-        borderRadius: 6,
-        backgroundColor: parsed ? "#ffffff" : colors.bg.tertiary,
-        borderWidth: 1.5,
-        borderStyle: parsed ? "solid" : "dashed",
-        borderColor: parsed ? colors.border.brand : colors.border.strong,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      {parsed ? (
+        width: 44, height: 58, borderRadius: 6,
+        backgroundColor: p ? "#fff" : colors.bg.tertiary,
+        borderWidth: 1.5, borderStyle: p ? "solid" : "dashed",
+        borderColor: p ? colors.border.brand : colors.border.strong,
+        alignItems: "center", justifyContent: "center",
+      }}>
+      {p ? (
         <View style={{ alignItems: "center" }}>
-          <Text style={{ fontSize: 15, fontWeight: "800", color: isRed(parsed.suit) ? "#dc2626" : "#1e293b", lineHeight: 18 }}>
-            {parsed.rank}
-          </Text>
-          <Text style={{ fontSize: 12, fontWeight: "700", color: isRed(parsed.suit) ? "#dc2626" : "#1e293b", lineHeight: 15 }}>
-            {SUIT_SYMBOLS[parsed.suit]}
-          </Text>
+          <Text style={{ fontSize: 15, fontWeight: "800", lineHeight: 18, color: isRed(p.suit) ? "#dc2626" : "#1e293b" }}>{p.rank}</Text>
+          <Text style={{ fontSize: 12, fontWeight: "700", lineHeight: 15, color: isRed(p.suit) ? "#dc2626" : "#1e293b" }}>{SUIT_SYMBOLS[p.suit]}</Text>
         </View>
       ) : (
-        <Text style={{ fontSize: 10, color: colors.text.tertiary }}>+</Text>
+        <Text style={{ fontSize: 22, color: colors.text.tertiary, lineHeight: 26 }}>+</Text>
       )}
     </TouchableOpacity>
   );
@@ -219,166 +203,145 @@ function FormCardSlot({ card, onPress, colors }: { card: Card; onPress: () => vo
 // ─── Poker Table ──────────────────────────────────────────────────────────────
 
 function PokerTable({
-  numPlayers,
-  heroPosition,
-  holeCards,
-  onCardSlotPress,
-  colors,
+  numPlayers, seatLabels, holeCards, onHeroCardPress, onVillainSeatPress, colors,
 }: {
-  numPlayers: number;
-  heroPosition: Position;
-  holeCards: [Card, Card];
-  onCardSlotPress: (slot: "hole1" | "hole2") => void;
-  colors: any;
+  numPlayers: number; seatLabels: string[];
+  holeCards: [Card,Card]; onHeroCardPress: (slot: "hole1"|"hole2") => void;
+  onVillainSeatPress: (seatIdx: number) => void; colors: any;
 }) {
-  const positions = getTablePositions(heroPosition, numPlayers);
-  const cx = TABLE_W / 2;
-  const cy = TABLE_H / 2;
+  const { tableW, tableH, rx, ry, containerW, containerH } = getTableLayout();
+  const cx = containerW / 2;
+  const cy = containerH / 2;
+
+  // Scale card size with player count
+  const cardSize = numPlayers > 7 ? 14 : numPlayers > 5 ? 16 : 18;
+  const badgeFontSize = numPlayers > 7 ? 7 : 8;
 
   return (
-    <View style={{ alignItems: "center", marginBottom: 24 }}>
-      <View
-        style={{
-          width: TABLE_W + SEAT_W + 16,
-          height: TABLE_H + SEAT_H + 16,
-          position: "relative",
-        }}
-      >
-        {/* Table felt */}
-        <View
-          style={{
-            position: "absolute",
-            left: SEAT_W / 2 + 8,
-            top: SEAT_H / 2 + 8,
-            width: TABLE_W,
-            height: TABLE_H,
-            borderRadius: TABLE_H / 2,
-            backgroundColor: "#1a5c38",
-            borderWidth: 8,
-            borderColor: "#7b4a2d",
-            shadowColor: "#000",
-            shadowOpacity: 0.5,
-            shadowOffset: { width: 0, height: 4 },
-            shadowRadius: 12,
-            elevation: 8,
-          }}
-        />
-        {/* Table logo center */}
-        <View
-          style={{
-            position: "absolute",
-            left: SEAT_W / 2 + 8 + cx - 40,
-            top: SEAT_H / 2 + 8 + cy - 16,
-            width: 80,
-            height: 32,
-            borderRadius: 16,
-            borderWidth: 1,
-            borderColor: "rgba(255,255,255,0.12)",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Text style={{ color: "rgba(255,255,255,0.18)", fontSize: 10, fontWeight: "700", letterSpacing: 2 }}>
-            POKER
-          </Text>
+    <View style={{ alignItems: "center", marginBottom: 16 }}>
+      <View style={{ width: containerW, height: containerH }}>
+
+        {/* Felt oval */}
+        <View style={{
+          position: "absolute",
+          left: cx - tableW / 2, top: cy - tableH / 2,
+          width: tableW, height: tableH,
+          borderRadius: tableH / 2,
+          backgroundColor: "#1a5c38",
+          borderWidth: 8, borderColor: "#7b4a2d",
+          shadowColor: "#000", shadowOpacity: 0.55,
+          shadowOffset: { width: 0, height: 4 }, shadowRadius: 12, elevation: 10,
+        }} />
+
+        {/* Inner rail highlight */}
+        <View style={{
+          position: "absolute",
+          left: cx - tableW / 2 + 10, top: cy - tableH / 2 + 10,
+          width: tableW - 20, height: tableH - 20,
+          borderRadius: (tableH - 20) / 2,
+          borderWidth: 1, borderColor: "rgba(255,255,255,0.08)",
+        }} />
+
+        {/* Brand logo centre */}
+        <View style={{ position: "absolute", left: cx - 26, top: cy - 26 }}>
+          <PokerRollLogo size={52} />
         </View>
 
         {/* Seats */}
-        {positions.map((pos, idx) => {
-          const { x, y } = seatPosition(idx, numPlayers);
+        {seatLabels.map((pos, idx) => {
+          const { x, y } = seatOffset(idx, numPlayers, rx, ry);
           const isHero = idx === 0;
           const isBtn = pos === "BTN";
-          const seatLeft = SEAT_W / 2 + 8 + cx + x - SEAT_W / 2;
-          const seatTop  = SEAT_H / 2 + 8 + cy + y - SEAT_H / 2;
+          const left = cx + x - SEAT_W / 2;
+          const top  = cy + y - SEAT_H / 2;
 
-          return (
-            <View
-              key={idx}
-              style={{
-                position: "absolute",
-                left: seatLeft,
-                top: seatTop,
-                width: SEAT_W,
-                height: SEAT_H,
-                alignItems: "center",
-              }}
-            >
-              {/* Position label */}
-              <View
-                style={{
-                  backgroundColor: isHero ? "#f59e0b" : "rgba(15,23,43,0.85)",
-                  borderRadius: 999,
-                  paddingHorizontal: 6,
-                  paddingVertical: 2,
-                  marginBottom: 4,
-                }}
-              >
-                <Text style={{ color: isHero ? "#020618" : "#ffffff", fontSize: 9, fontWeight: "700" }}>
+          const seatContent = (
+            <>
+              {/* Position badge */}
+              <View style={{
+                backgroundColor: isHero ? "#f59e0b" : "rgba(15,23,43,0.90)",
+                borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2, marginBottom: 4,
+                borderWidth: isHero ? 0 : 1,
+                borderColor: "rgba(255,255,255,0.15)",
+              }}>
+                <Text style={{ color: isHero ? "#020618" : "#fff", fontSize: badgeFontSize, fontWeight: "800" }}>
                   {pos}
                 </Text>
               </View>
 
               {/* Dealer button */}
               {isBtn && (
-                <View
-                  style={{
-                    position: "absolute",
-                    top: -4,
-                    right: -2,
-                    width: 16,
-                    height: 16,
-                    borderRadius: 8,
-                    backgroundColor: "#ffffff",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    zIndex: 10,
-                  }}
-                >
-                  <Text style={{ fontSize: 7, fontWeight: "900", color: "#000" }}>D</Text>
+                <View style={{
+                  position: "absolute", top: 0, right: -2,
+                  width: 15, height: 15, borderRadius: 8,
+                  backgroundColor: "#fff", alignItems: "center", justifyContent: "center",
+                }}>
+                  <Text style={{ fontSize: 6, fontWeight: "900", color: "#000" }}>D</Text>
                 </View>
               )}
 
-              {/* Card area */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  gap: 3,
-                  padding: 4,
-                  borderRadius: 8,
-                  borderWidth: isHero ? 2 : 0,
-                  borderColor: isHero ? "#f59e0b" : "transparent",
-                  backgroundColor: isHero ? "rgba(245,158,11,0.1)" : "transparent",
-                }}
-              >
+              {/* Cards */}
+              <View style={{
+                flexDirection: "row", gap: 2, padding: isHero ? 4 : 0,
+                borderRadius: 6,
+                borderWidth: isHero ? 1.5 : 0,
+                borderColor: isHero ? "#f59e0b" : "transparent",
+                backgroundColor: isHero ? "rgba(245,158,11,0.10)" : "transparent",
+              }}>
                 {isHero ? (
                   <>
-                    <CardChip card={holeCards[0]} onPress={() => onCardSlotPress("hole1")} colors={colors} />
-                    <CardChip card={holeCards[1]} onPress={() => onCardSlotPress("hole2")} colors={colors} />
+                    <TableCard card={holeCards[0]} size={cardSize} onPress={() => onHeroCardPress("hole1")} />
+                    <TableCard card={holeCards[1]} size={cardSize} onPress={() => onHeroCardPress("hole2")} />
                   </>
                 ) : (
-                  <>
-                    {[0, 1].map((ci) => (
-                      <View
-                        key={ci}
-                        style={{
-                          width: 18,
-                          height: 26,
-                          borderRadius: 3,
-                          backgroundColor: "#4a5568",
-                          borderWidth: 1,
-                          borderColor: "#718096",
-                        }}
-                      />
-                    ))}
-                  </>
+                  [0,1].map(ci => (
+                    <View key={ci} style={{
+                      width: cardSize, height: cardSize * 1.36, borderRadius: 2,
+                      backgroundColor: "#4a5568", borderWidth: 1, borderColor: "#718096",
+                    }} />
+                  ))
                 )}
               </View>
 
               {isHero && (
-                <Text style={{ color: "#f59e0b", fontSize: 8, fontWeight: "800", marginTop: 2 }}>
-                  YOU
-                </Text>
+                <Text style={{ color: "#f59e0b", fontSize: 7, fontWeight: "800", marginTop: 2 }}>YOU</Text>
               )}
+              {!isHero && (
+                <MaterialCommunityIcons name="pencil" size={9} color="rgba(255,255,255,0.45)" style={{ marginTop: 3 }} />
+              )}
+            </>
+          );
+
+          // Villain seats: entire area is the touch target
+          if (!isHero) {
+            return (
+              <TouchableOpacity
+                key={idx}
+                onPress={() => onVillainSeatPress(idx)}
+                activeOpacity={0.65}
+                style={{
+                  position: "absolute", left, top, width: SEAT_W, height: SEAT_H,
+                  alignItems: "center", justifyContent: "center",
+                  borderRadius: 10, borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.15)",
+                  borderStyle: "dashed",
+                }}
+              >
+                {seatContent}
+              </TouchableOpacity>
+            );
+          }
+
+          // Hero seat: plain view, card slots handle their own taps
+          return (
+            <View
+              key={idx}
+              style={{
+                position: "absolute", left, top, width: SEAT_W, height: SEAT_H,
+                alignItems: "center", justifyContent: "center",
+              }}
+            >
+              {seatContent}
             </View>
           );
         })}
@@ -387,91 +350,147 @@ function PokerTable({
   );
 }
 
-// ─── Card Picker Modal ────────────────────────────────────────────────────────
+// ─── Villain Position Picker ──────────────────────────────────────────────────
 
-function CardPickerModal({
-  visible,
-  activeSlot,
-  usedCards,
-  onSelect,
-  onClose,
-  colors,
+function VillainPositionModal({
+  visible, seatIdx, currentPos, autoPos, heroPos, takenPositions,
+  onSelect, onReset, onClose, colors, radius,
 }: {
-  visible: boolean;
-  activeSlot: SlotKey | null;
-  usedCards: string[];
-  onSelect: (card: string) => void;
-  onClose: () => void;
-  colors: any;
+  visible: boolean; seatIdx: number; currentPos: Position | null;
+  autoPos: Position; heroPos: Position; takenPositions: Position[];
+  onSelect: (p: Position) => void; onReset: () => void; onClose: () => void;
+  colors: any; radius: any;
 }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.7)" }}>
-        <View
-          style={{
-            backgroundColor: colors.bg.secondary,
-            borderTopLeftRadius: 24,
-            borderTopRightRadius: 24,
-            padding: 16,
-            paddingBottom: 32,
-          }}
-        >
+      <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.65)" }}>
+        <View style={{
+          backgroundColor: colors.bg.secondary,
+          borderTopLeftRadius: 24, borderTopRightRadius: 24,
+          padding: 20, paddingBottom: 36,
+        }}>
           {/* Header */}
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <Text style={{ color: colors.text.primary, fontSize: 16, fontWeight: "700" }}>
-              Select Card
+              Villain {seatIdx} Position
             </Text>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
               <MaterialCommunityIcons name="close" size={22} color={colors.text.secondary} />
             </TouchableOpacity>
           </View>
+          <Text style={{ color: colors.text.tertiary, fontSize: 12, marginBottom: 16 }}>
+            Auto-assigned: <Text style={{ fontWeight: "700", color: colors.text.secondary }}>{autoPos}</Text>
+            {currentPos ? "  ·  Custom set" : ""}
+          </Text>
 
-          {/* Suit headers */}
-          <View style={{ flexDirection: "row", marginBottom: 4, paddingLeft: 28 }}>
-            {RANKS.map((r) => (
+          {/* Position grid */}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+            {POSITIONS.map(p => {
+              const isHeroPos = p === heroPos;
+              const isSelected = (currentPos ?? autoPos) === p;
+              return (
+                <TouchableOpacity
+                  key={p}
+                  disabled={isHeroPos}
+                  onPress={() => onSelect(p)}
+                  style={{
+                    paddingHorizontal: 16, paddingVertical: 10,
+                    borderRadius: radius.full,
+                    backgroundColor: isSelected ? colors.bg.brand : colors.bg.tertiary,
+                    borderWidth: 1,
+                    borderColor: isSelected ? colors.border.brand : isHeroPos ? colors.border.subtle : colors.border.default,
+                    opacity: isHeroPos ? 0.35 : 1,
+                  }}>
+                  <Text style={{
+                    fontSize: 13, fontWeight: "700",
+                    color: isSelected ? colors.text.onBrand : colors.text.primary,
+                  }}>{p}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Hero position note */}
+          <Text style={{ color: colors.text.tertiary, fontSize: 11, marginBottom: 16 }}>
+            <Text style={{ color: colors.text.brand }}>{heroPos}</Text> is reserved for Hero
+          </Text>
+
+          {/* Reset button */}
+          {currentPos && (
+            <TouchableOpacity
+              onPress={onReset}
+              style={{
+                paddingVertical: 12, borderRadius: radius.sm, alignItems: "center",
+                borderWidth: 1, borderColor: colors.border.default,
+                backgroundColor: colors.bg.tertiary, marginBottom: 8,
+              }}>
+              <Text style={{ color: colors.text.secondary, fontSize: 14, fontWeight: "600" }}>
+                Reset to Auto ({autoPos})
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            onPress={onClose}
+            style={{
+              paddingVertical: 14, borderRadius: radius.sm, alignItems: "center",
+              backgroundColor: colors.bg.brand,
+            }}>
+            <Text style={{ color: colors.text.onBrand, fontSize: 15, fontWeight: "700" }}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Card Picker Modal ────────────────────────────────────────────────────────
+
+function CardPickerModal({
+  visible, usedCards, onSelect, onClose, colors,
+}: {
+  visible: boolean; usedCards: string[];
+  onSelect: (c: string) => void; onClose: () => void; colors: any;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.7)" }}>
+        <View style={{
+          backgroundColor: colors.bg.secondary,
+          borderTopLeftRadius: 24, borderTopRightRadius: 24,
+          padding: 16, paddingBottom: 36,
+        }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <Text style={{ color: colors.text.primary, fontSize: 16, fontWeight: "700" }}>Select Card</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <MaterialCommunityIcons name="close" size={22} color={colors.text.secondary} />
+            </TouchableOpacity>
+          </View>
+          <View style={{ flexDirection: "row", marginBottom: 4, paddingLeft: 24 }}>
+            {RANKS.map(r => (
               <View key={r} style={{ flex: 1, alignItems: "center" }}>
-                <Text style={{ color: colors.text.tertiary, fontSize: 9, fontWeight: "600" }}>{r}</Text>
+                <Text style={{ color: colors.text.tertiary, fontSize: 8, fontWeight: "600" }}>{r}</Text>
               </View>
             ))}
           </View>
-
-          {/* Card grid: 4 rows (suits) × 13 cols (ranks) */}
-          {SUITS.map((suit) => (
-            <View key={suit} style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
-              <Text style={{ width: 24, color: isRed(suit) ? "#dc2626" : colors.text.primary, fontSize: 14, fontWeight: "700" }}>
+          {SUITS.map(suit => (
+            <View key={suit} style={{ flexDirection: "row", alignItems: "center", marginBottom: 5 }}>
+              <Text style={{ width: 22, fontSize: 14, fontWeight: "700", color: isRed(suit) ? "#dc2626" : colors.text.primary }}>
                 {SUIT_SYMBOLS[suit]}
               </Text>
-              {RANKS.map((rank) => {
-                const cardStr = `${rank}${suit}`;
-                const used = usedCards.includes(cardStr);
+              {RANKS.map(rank => {
+                const cs = `${rank}${suit}`;
+                const used = usedCards.includes(cs);
                 return (
-                  <TouchableOpacity
-                    key={cardStr}
-                    disabled={used}
-                    onPress={() => onSelect(cardStr)}
+                  <TouchableOpacity key={cs} disabled={used} onPress={() => onSelect(cs)}
                     activeOpacity={0.7}
                     style={{
-                      flex: 1,
-                      marginHorizontal: 1.5,
-                      paddingVertical: 6,
-                      borderRadius: 5,
-                      backgroundColor: used ? "transparent" : (isRed(suit) ? "rgba(220,38,38,0.12)" : colors.bg.tertiary),
-                      alignItems: "center",
-                      borderWidth: 1,
-                      borderColor: used ? colors.border.subtle : (isRed(suit) ? "rgba(220,38,38,0.3)" : colors.border.default),
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: "700",
-                        color: used
-                          ? colors.text.disabled
-                          : isRed(suit)
-                          ? "#dc2626"
-                          : colors.text.primary,
-                      }}
-                    >
+                      flex: 1, marginHorizontal: 1, paddingVertical: 7, borderRadius: 5,
+                      backgroundColor: used ? "transparent" : isRed(suit) ? "rgba(220,38,38,0.12)" : colors.bg.tertiary,
+                      alignItems: "center", borderWidth: 1,
+                      borderColor: used ? colors.border.subtle : isRed(suit) ? "rgba(220,38,38,0.3)" : colors.border.default,
+                    }}>
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: used ? colors.text.disabled : isRed(suit) ? "#dc2626" : colors.text.primary }}>
                       {rank}
                     </Text>
                   </TouchableOpacity>
@@ -485,80 +504,153 @@ function CardPickerModal({
   );
 }
 
-// ─── Grade Badge ──────────────────────────────────────────────────────────────
+// ─── Action Timeline ──────────────────────────────────────────────────────────
 
-function GradeBadge({ grade, colors }: { grade: string; colors: any }) {
+function ActionTimeline({
+  actions, onChange, colors, radius,
+}: {
+  actions: ActionItem[]; onChange: (items: ActionItem[]) => void;
+  colors: any; radius: any;
+}) {
+  const needsAmount = (t: ActionType) => ["Raise","Bet","Call","All-in"].includes(t);
+
+  function update(id: string, patch: Partial<ActionItem>) {
+    onChange(actions.map(a => a.id === id ? { ...a, ...patch } : a));
+  }
+  function remove(id: string) { onChange(actions.filter(a => a.id !== id)); }
+  function add(player: "Hero"|"Villain") { onChange([...actions, newAction(player)]); }
+
   return (
-    <View
-      style={{
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: gradeColor(grade, colors),
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <Text style={{ color: "#ffffff", fontSize: 16, fontWeight: "900" }}>{grade}</Text>
+    <View style={{ gap: 8 }}>
+      {actions.map(item => {
+        const isHero = item.player === "Hero";
+        return (
+          <View key={item.id} style={{
+            borderRadius: 10, borderWidth: 1, padding: 10,
+            borderColor: isHero ? colors.border.brand : colors.border.default,
+            backgroundColor: isHero ? colors.bg.brand + "12" : colors.bg.tertiary,
+          }}>
+            {/* Player toggle + remove */}
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <View style={{ flexDirection: "row", gap: 6 }}>
+                {["Hero","Villain"].map(p => (
+                  <TouchableOpacity key={p} onPress={() => update(item.id, { player: p })}
+                    style={{
+                      paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.full,
+                      backgroundColor: item.player === p ? (p==="Hero" ? colors.bg.brand : colors.bg.secondary) : "transparent",
+                      borderWidth: 1,
+                      borderColor: item.player === p ? (p==="Hero" ? colors.border.brand : colors.border.strong) : colors.border.subtle,
+                    }}>
+                    <Text style={{
+                      fontSize: 11, fontWeight: "700",
+                      color: item.player === p ? (p==="Hero" ? colors.text.onBrand : colors.text.primary) : colors.text.tertiary,
+                    }}>{p}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {actions.length > 1 && (
+                <TouchableOpacity onPress={() => remove(item.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <MaterialCommunityIcons name="close-circle-outline" size={18} color={colors.text.tertiary} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Action pills */}
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 5, marginBottom: needsAmount(item.type) ? 8 : 0 }}>
+              {ACTIONS.map(a => (
+                <TouchableOpacity key={a} onPress={() => update(item.id, { type: a, amount: "" })}
+                  style={{
+                    paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.full,
+                    backgroundColor: item.type === a ? colors.bg.brand : colors.bg.secondary,
+                    borderWidth: 1,
+                    borderColor: item.type === a ? colors.border.brand : colors.border.default,
+                  }}>
+                  <Text style={{ fontSize: 12, fontWeight: "600", color: item.type === a ? colors.text.onBrand : colors.text.primary }}>
+                    {a}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Amount */}
+            {needsAmount(item.type) && (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <TextInput
+                  value={item.amount} onChangeText={t => update(item.id, { amount: t })}
+                  placeholder="Amount" placeholderTextColor={colors.text.tertiary}
+                  keyboardType="numeric"
+                  style={{
+                    flex: 1, backgroundColor: colors.bg.secondary, borderRadius: 8,
+                    borderWidth: 1, borderColor: colors.border.default,
+                    paddingHorizontal: 10, paddingVertical: 8,
+                    color: colors.text.primary, fontSize: 14,
+                  }}
+                />
+                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>BB</Text>
+              </View>
+            )}
+          </View>
+        );
+      })}
+
+      {/* Add buttons */}
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        {(["Hero","Villain"] as const).map(p => (
+          <TouchableOpacity key={p} onPress={() => add(p)}
+            style={{
+              flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+              gap: 4, paddingVertical: 9, borderRadius: radius.sm,
+              borderWidth: 1, borderStyle: "dashed",
+              borderColor: p === "Hero" ? colors.border.brand : colors.border.default,
+            }}>
+            <MaterialCommunityIcons name="plus" size={13} color={p === "Hero" ? colors.text.brand : colors.text.secondary} />
+            <Text style={{ fontSize: 12, fontWeight: "700", color: p === "Hero" ? colors.text.brand : colors.text.secondary }}>
+              {p} Action
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
     </View>
   );
 }
 
 // ─── Street Result Panel ──────────────────────────────────────────────────────
 
-function StreetPanel({
-  street,
-  data,
-  boardCards,
-  colors,
-}: {
-  street: string;
-  data: StreetAnalysis;
-  boardCards?: Card[];
-  colors: any;
+function GradeBadge({ grade, colors }: { grade: string; colors: any }) {
+  return (
+    <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: gradeColor(grade, colors), alignItems: "center", justifyContent: "center" }}>
+      <Text style={{ color: "#fff", fontSize: 16, fontWeight: "900" }}>{grade}</Text>
+    </View>
+  );
+}
+
+function StreetPanel({ street, data, boardCards, colors }: {
+  street: string; data: StreetAnalysis; boardCards?: Card[]; colors: any;
 }) {
   return (
-    <View
-      style={{
-        backgroundColor: colors.bg.secondary,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: colors.border.default,
-        padding: 16,
-        marginBottom: 12,
-      }}
-    >
+    <View style={{ backgroundColor: colors.bg.secondary, borderRadius: 16, borderWidth: 1, borderColor: colors.border.default, padding: 16, marginBottom: 12 }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <Text style={{ color: colors.text.primary, fontSize: 16, fontWeight: "700" }}>{street}</Text>
         <GradeBadge grade={data.grade} colors={colors} />
       </View>
-
-      {boardCards && boardCards.filter(Boolean).length > 0 && (
+      {(boardCards ?? []).filter(Boolean).length > 0 && (
         <View style={{ flexDirection: "row", gap: 6, marginBottom: 10 }}>
-          {boardCards.filter(Boolean).map((c, i) => {
+          {(boardCards ?? []).filter(Boolean).map((c, i) => {
             const p = parseCard(c);
             return p ? (
               <View key={i} style={{ width: 32, height: 44, borderRadius: 4, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" }}>
-                <Text style={{ fontSize: 12, fontWeight: "800", color: isRed(p.suit) ? "#dc2626" : "#1e293b", lineHeight: 14 }}>{p.rank}</Text>
-                <Text style={{ fontSize: 10, fontWeight: "700", color: isRed(p.suit) ? "#dc2626" : "#1e293b", lineHeight: 12 }}>{SUIT_SYMBOLS[p.suit]}</Text>
+                <Text style={{ fontSize: 12, fontWeight: "800", lineHeight: 14, color: isRed(p.suit) ? "#dc2626" : "#1e293b" }}>{p.rank}</Text>
+                <Text style={{ fontSize: 10, fontWeight: "700", lineHeight: 12, color: isRed(p.suit) ? "#dc2626" : "#1e293b" }}>{SUIT_SYMBOLS[p.suit]}</Text>
               </View>
             ) : null;
           })}
         </View>
       )}
-
-      <Text style={{ color: colors.text.secondary, fontSize: 12, marginBottom: 4 }}>
-        <Text style={{ fontWeight: "700", color: colors.text.primary }}>Action: </Text>{data.heroAction}
-      </Text>
-      <Text style={{ color: colors.text.secondary, fontSize: 12, marginBottom: 4 }}>
-        <Text style={{ fontWeight: "700", color: colors.text.primary }}>Assessment: </Text>{data.assessment}
-      </Text>
-      <Text style={{ color: colors.text.secondary, fontSize: 12, marginBottom: 4 }}>
-        <Text style={{ fontWeight: "700", color: colors.text.primary }}>Suggestion: </Text>{data.suggestion}
-      </Text>
-      <Text style={{ color: colors.text.secondary, fontSize: 12 }}>
-        <Text style={{ fontWeight: "700", color: colors.text.primary }}>Reasoning: </Text>{data.reasoning}
-      </Text>
+      {[["Action", data.heroAction], ["Assessment", data.assessment], ["Suggestion", data.suggestion], ["Reasoning", data.reasoning]].map(([label, value]) => (
+        <Text key={label} style={{ color: colors.text.secondary, fontSize: 12, marginBottom: 4 }}>
+          <Text style={{ fontWeight: "700", color: colors.text.primary }}>{label}: </Text>{value}
+        </Text>
+      ))}
     </View>
   );
 }
@@ -571,98 +663,100 @@ export default function HandReviewScreen() {
   // ── Hand state ──
   const [numPlayers, setNumPlayers] = useState(6);
   const [heroPosition, setHeroPosition] = useState<Position>("BTN");
+  const [villainOverrides, setVillainOverrides] = useState<Record<number, Position>>({});
   const [stackSize, setStackSize] = useState("100");
-  const [holeCards, setHoleCards] = useState<[Card, Card]>([null, null]);
-  const [flop, setFlop] = useState<[Card, Card, Card]>([null, null, null]);
+  const [stackMode, setStackMode] = useState<StackMode>("BB");
+  const [bbDollars, setBbDollars] = useState("2");
+  const [holeCards, setHoleCards] = useState<[Card,Card]>([null,null]);
+  const [flop, setFlop] = useState<[Card,Card,Card]>([null,null,null]);
   const [turn, setTurn] = useState<Card>(null);
   const [river, setRiver] = useState<Card>(null);
-  const [preflopAction, setPreflopAction] = useState<StreetAction>({ type: "Raise", amount: "3" });
-  const [flopAction, setFlopAction] = useState<StreetAction>({ type: "Bet", amount: "" });
-  const [turnAction, setTurnAction] = useState<StreetAction>({ type: "Check", amount: "" });
-  const [riverAction, setRiverAction] = useState<StreetAction>({ type: "Call", amount: "" });
+  const [preflopActions, setPreflopActions] = useState<ActionItem[]>([newAction("Hero")]);
+  const [flopActions, setFlopActions] = useState<ActionItem[]>([newAction("Hero")]);
+  const [turnActions, setTurnActions] = useState<ActionItem[]>([newAction("Hero")]);
+  const [riverActions, setRiverActions] = useState<ActionItem[]>([newAction("Hero")]);
 
   // ── UI state ──
   const [pickerVisible, setPickerVisible] = useState(false);
-  const [activeSlot, setActiveSlot] = useState<SlotKey | null>(null);
+  const [activeSlot, setActiveSlot] = useState<SlotKey|null>(null);
+  const [editingSeat, setEditingSeat] = useState<number|null>(null);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<AIResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<AIResult|null>(null);
+  const [error, setError] = useState<string|null>(null);
 
+  // ── Derived ──
+  const seatLabels = computeSeatLabels(heroPosition, numPlayers, villainOverrides);
   const allUsed = allSelectedCards(holeCards, flop, turn, river);
   const holesFilled = holeCards[0] && holeCards[1];
   const flopFilled = flop[0] && flop[1] && flop[2];
-  const showFlop = !!holesFilled;
-  const showTurn = !!flopFilled;
-  const showRiver = !!turn;
+  const preflopFolded = preflopActions.some(a => a.player === "Hero" && a.type === "Fold");
+  const flopFolded = flopActions.some(a => a.player === "Hero" && a.type === "Fold");
+  const turnFolded = turnActions.some(a => a.player === "Hero" && a.type === "Fold");
+  const stackBB = stackInBB(stackSize, stackMode, bbDollars);
 
-  // Street is folded if action type is Fold
-  const preflopFolded = preflopAction.type === "Fold";
-  const flopFolded = flopAction.type === "Fold";
-  const turnFolded = turnAction.type === "Fold";
-
-  function openPicker(slot: SlotKey) {
-    setActiveSlot(slot);
-    setPickerVisible(true);
+  // Auto positions for the villain being edited
+  const pool = POSITIONS_BY_COUNT[numPlayers] ?? POSITIONS_BY_COUNT[6];
+  const heroIdx = pool.indexOf(heroPosition);
+  function autoPositionForSeat(idx: number): Position {
+    return pool[(heroIdx + idx) % pool.length];
   }
+
+  function openPicker(slot: SlotKey) { setActiveSlot(slot); setPickerVisible(true); }
 
   function handleCardSelect(cardStr: string) {
     if (!activeSlot) return;
-    const card = cardStr as Card;
-    if (activeSlot === "hole1") setHoleCards([card, holeCards[1]]);
-    else if (activeSlot === "hole2") setHoleCards([holeCards[0], card]);
-    else if (activeSlot === "flop1") setFlop([card, flop[1], flop[2]]);
-    else if (activeSlot === "flop2") setFlop([flop[0], card, flop[2]]);
-    else if (activeSlot === "flop3") setFlop([flop[0], flop[1], card]);
-    else if (activeSlot === "turn") setTurn(card);
-    else if (activeSlot === "river") setRiver(card);
-    setPickerVisible(false);
-    setActiveSlot(null);
+    const c = cardStr as Card;
+    if      (activeSlot === "hole1") setHoleCards([c, holeCards[1]]);
+    else if (activeSlot === "hole2") setHoleCards([holeCards[0], c]);
+    else if (activeSlot === "flop1") setFlop([c, flop[1], flop[2]]);
+    else if (activeSlot === "flop2") setFlop([flop[0], c, flop[2]]);
+    else if (activeSlot === "flop3") setFlop([flop[0], flop[1], c]);
+    else if (activeSlot === "turn")  setTurn(c);
+    else if (activeSlot === "river") setRiver(c);
+    setPickerVisible(false); setActiveSlot(null);
+  }
+
+  function setVillainPos(seatIdx: number, pos: Position) {
+    setVillainOverrides(prev => ({ ...prev, [seatIdx]: pos }));
+    setEditingSeat(null);
+  }
+
+  function resetVillainPos(seatIdx: number) {
+    setVillainOverrides(prev => { const next = { ...prev }; delete next[seatIdx]; return next; });
+    setEditingSeat(null);
   }
 
   function resetHand() {
-    setHoleCards([null, null]);
-    setFlop([null, null, null]);
-    setTurn(null);
-    setRiver(null);
-    setPreflopAction({ type: "Raise", amount: "3" });
-    setFlopAction({ type: "Bet", amount: "" });
-    setTurnAction({ type: "Check", amount: "" });
-    setRiverAction({ type: "Call", amount: "" });
-    setResult(null);
-    setError(null);
+    setHoleCards([null,null]); setFlop([null,null,null]); setTurn(null); setRiver(null);
+    setVillainOverrides({});
+    setPreflopActions([newAction("Hero")]); setFlopActions([newAction("Hero")]);
+    setTurnActions([newAction("Hero")]); setRiverActions([newAction("Hero")]);
+    setResult(null); setError(null);
   }
 
   async function analyzeHand() {
     if (!holeCards[0] || !holeCards[1]) return;
-
-    setLoading(true);
-    setError(null);
-    setResult(null);
-
+    setLoading(true); setError(null); setResult(null);
     const userMsg = buildUserMessage(
-      holeCards, heroPosition, stackSize, numPlayers,
+      holeCards, heroPosition, stackBB, numPlayers, seatLabels,
       flop, turn, river,
-      { preflop: preflopAction, flop: flopAction, turn: turnAction, river: riverAction }
+      { preflop: preflopActions, flop: flopActions, turn: turnActions, river: riverActions }
     );
-
     try {
       const response = await fetch(`${BACKEND_URL}/api/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userMessage: userMsg }),
       });
-
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         throw new Error((err as any)?.error ?? `Server error ${response.status}`);
       }
-
       const data = await response.json();
       const text: string = data.text ?? "";
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("Invalid response from server");
-      const parsed: AIResult = JSON.parse(jsonMatch[0]);
-      setResult(parsed);
+      const match = text.match(/\{[\s\S]*\}/);
+      if (!match) throw new Error("Invalid response from server");
+      setResult(JSON.parse(match[0]) as AIResult);
     } catch (e: any) {
       setError(e?.message ?? "Analysis failed");
     } finally {
@@ -670,330 +764,201 @@ export default function HandReviewScreen() {
     }
   }
 
-  // ── Renders ──
-
-  function renderActionRow(action: StreetAction, setAction: (a: StreetAction) => void) {
-    const needsAmount = ["Raise", "Bet", "Call", "All-in"].includes(action.type);
+  // ── Helpers ──
+  function SLabel({ label }: { label: string }) {
     return (
-      <View style={{ gap: 8 }}>
-        <Text style={{ color: colors.text.secondary, fontSize: 12, fontWeight: "600", letterSpacing: 1, textTransform: "uppercase" }}>
-          Action
-        </Text>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-          {ACTIONS.map((a) => (
-            <TouchableOpacity
-              key={a}
-              onPress={() => setAction({ ...action, type: a })}
-              style={{
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-                borderRadius: radius.full,
-                backgroundColor: action.type === a ? colors.bg.brand : colors.bg.tertiary,
-                borderWidth: 1,
-                borderColor: action.type === a ? colors.border.brand : colors.border.default,
-              }}
-            >
-              <Text style={{
-                fontSize: 13,
-                fontWeight: "600",
-                color: action.type === a ? colors.text.onBrand : colors.text.primary,
-              }}>
-                {a}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        {needsAmount && (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 }}>
-            <TextInput
-              value={action.amount}
-              onChangeText={(t) => setAction({ ...action, amount: t })}
-              placeholder="Amount (BB)"
-              placeholderTextColor={colors.text.tertiary}
-              keyboardType="numeric"
-              style={{
-                flex: 1,
-                backgroundColor: colors.bg.tertiary,
-                borderRadius: radius.sm,
-                borderWidth: 1,
-                borderColor: colors.border.default,
-                paddingHorizontal: 12,
-                paddingVertical: 10,
-                color: colors.text.primary,
-                fontSize: 14,
-              }}
-            />
-            <Text style={{ color: colors.text.secondary, fontSize: 13 }}>BB</Text>
-          </View>
-        )}
-      </View>
-    );
-  }
-
-  function renderSectionLabel(label: string) {
-    return (
-      <Text style={{
-        color: colors.text.secondary,
-        fontSize: 11,
-        fontWeight: "700",
-        letterSpacing: 1.5,
-        textTransform: "uppercase",
-        marginBottom: 8,
-      }}>
+      <Text style={{ color: colors.text.secondary, fontSize: 11, fontWeight: "700", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 8 }}>
         {label}
       </Text>
     );
   }
 
-  function renderCard(label: string, node: ReactNode) {
+  function Section({ label, children, extra }: { label: string; children: ReactNode; extra?: ReactNode }) {
     return (
-      <View style={{
-        backgroundColor: colors.bg.secondary,
-        borderRadius: radius.md,
-        borderWidth: 1,
-        borderColor: colors.border.default,
-        padding: 16,
-        marginBottom: 12,
-        gap: 12,
-      }}>
-        {renderSectionLabel(label)}
-        {node}
+      <View style={{ backgroundColor: colors.bg.secondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border.default, padding: 16, marginBottom: 12, gap: 12 }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <SLabel label={label} />
+          {extra}
+        </View>
+        {children}
       </View>
     );
   }
 
-  // ── Result view ──
+  // ── Results ──
   if (result) {
     return (
-      <ScrollView
-        style={{ flex: 1, backgroundColor: colors.bg.primary }}
-        contentContainerStyle={{ padding: 16, paddingBottom: 140 }}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={{ color: colors.text.primary, fontSize: 22, fontWeight: "800", marginBottom: 4 }}>
-          Hand Analysis
-        </Text>
-        <Text style={{ color: colors.text.secondary, fontSize: 13, marginBottom: 20 }}>
-          AI coaching feedback on every decision
-        </Text>
-
-        {result.preflop && (
-          <StreetPanel street="Preflop" data={result.preflop} colors={colors} />
-        )}
-        {result.flop && (
-          <StreetPanel street="Flop" data={result.flop} boardCards={[flop[0], flop[1], flop[2]]} colors={colors} />
-        )}
-        {result.turn && (
-          <StreetPanel street="Turn" data={result.turn} boardCards={[turn]} colors={colors} />
-        )}
-        {result.river && (
-          <StreetPanel street="River" data={result.river} boardCards={[river]} colors={colors} />
-        )}
-
-        {/* Summary */}
-        <View style={{
-          backgroundColor: colors.bg.secondary,
-          borderRadius: 16,
-          borderWidth: 1,
-          borderColor: colors.border.brand,
-          padding: 16,
-          marginBottom: 20,
-        }}>
-          <Text style={{ color: colors.text.brand, fontSize: 13, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>
-            Summary
-          </Text>
-          <Text style={{ color: colors.text.primary, fontSize: 14, lineHeight: 21 }}>
-            {result.summary}
-          </Text>
+      <ScrollView style={{ flex: 1, backgroundColor: colors.bg.primary }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 140 }} showsVerticalScrollIndicator={false}>
+        <Text style={{ color: colors.text.primary, fontSize: 22, fontWeight: "800", marginBottom: 4 }}>Hand Analysis</Text>
+        <Text style={{ color: colors.text.secondary, fontSize: 13, marginBottom: 20 }}>AI coaching feedback on every street</Text>
+        {result.preflop && <StreetPanel street="Preflop" data={result.preflop} colors={colors} />}
+        {result.flop && <StreetPanel street="Flop" data={result.flop} boardCards={[flop[0],flop[1],flop[2]]} colors={colors} />}
+        {result.turn && <StreetPanel street="Turn" data={result.turn} boardCards={[turn]} colors={colors} />}
+        {result.river && <StreetPanel street="River" data={result.river} boardCards={[river]} colors={colors} />}
+        <View style={{ backgroundColor: colors.bg.secondary, borderRadius: 16, borderWidth: 1, borderColor: colors.border.brand, padding: 16, marginBottom: 20 }}>
+          <Text style={{ color: colors.text.brand, fontSize: 13, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>Summary</Text>
+          <Text style={{ color: colors.text.primary, fontSize: 14, lineHeight: 21 }}>{result.summary}</Text>
         </View>
-
-        <TouchableOpacity
-          onPress={resetHand}
-          style={{
-            backgroundColor: colors.bg.brand,
-            borderRadius: radius.md,
-            paddingVertical: 16,
-            alignItems: "center",
-          }}
-        >
-          <Text style={{ color: colors.text.onBrand, fontSize: 16, fontWeight: "700" }}>
-            Review Another Hand
-          </Text>
+        <TouchableOpacity onPress={resetHand} style={{ backgroundColor: colors.bg.brand, borderRadius: radius.md, paddingVertical: 16, alignItems: "center" }}>
+          <Text style={{ color: colors.text.onBrand, fontSize: 16, fontWeight: "700" }}>Review Another Hand</Text>
         </TouchableOpacity>
       </ScrollView>
     );
   }
 
-  // ── Input view ──
+  // ── Input ──
   return (
     <>
-      <ScrollView
-        style={{ flex: 1, backgroundColor: colors.bg.primary }}
+      <ScrollView style={{ flex: 1, backgroundColor: colors.bg.primary }}
         contentContainerStyle={{ padding: 16, paddingBottom: 140 }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Poker table */}
+        showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+
         <PokerTable
-          numPlayers={numPlayers}
-          heroPosition={heroPosition}
-          holeCards={holeCards}
-          onCardSlotPress={openPicker}
-          colors={colors}
+          numPlayers={numPlayers} seatLabels={seatLabels}
+          holeCards={holeCards} onHeroCardPress={openPicker}
+          onVillainSeatPress={setEditingSeat} colors={colors}
         />
 
-        {/* Setup card */}
-        {renderCard("Setup", (
-          <View style={{ gap: 12 }}>
-            {/* Players */}
-            <View>
-              {renderSectionLabel("Number of Players")}
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                {[2,3,4,5,6,7,8,9].map((n) => (
-                  <TouchableOpacity
-                    key={n}
-                    onPress={() => setNumPlayers(n)}
-                    style={{
-                      paddingHorizontal: 14,
-                      paddingVertical: 7,
-                      borderRadius: radius.full,
-                      backgroundColor: numPlayers === n ? colors.bg.brand : colors.bg.tertiary,
-                      borderWidth: 1,
-                      borderColor: numPlayers === n ? colors.border.brand : colors.border.default,
-                    }}
-                  >
-                    <Text style={{ fontSize: 13, fontWeight: "600", color: numPlayers === n ? colors.text.onBrand : colors.text.primary }}>
-                      {n}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
+        {/* Villain position hint */}
+        <Text style={{ color: colors.text.tertiary, fontSize: 11, textAlign: "center", marginTop: -8, marginBottom: 16 }}>
+          Tap any villain seat to set their position
+        </Text>
 
-            {/* Position */}
-            <View>
-              {renderSectionLabel("Hero Position")}
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                {POSITIONS.map((p) => {
-                  const available = (POSITIONS_BY_COUNT[numPlayers] ?? []).includes(p);
-                  return (
-                    <TouchableOpacity
-                      key={p}
-                      onPress={() => available && setHeroPosition(p)}
-                      disabled={!available}
-                      style={{
-                        paddingHorizontal: 12,
-                        paddingVertical: 6,
-                        borderRadius: radius.full,
-                        backgroundColor: heroPosition === p ? colors.bg.brand : available ? colors.bg.tertiary : colors.bg.secondary,
-                        borderWidth: 1,
-                        borderColor: heroPosition === p ? colors.border.brand : available ? colors.border.default : colors.border.subtle,
-                        opacity: available ? 1 : 0.4,
-                      }}
-                    >
-                      <Text style={{ fontSize: 12, fontWeight: "600", color: heroPosition === p ? colors.text.onBrand : colors.text.primary }}>
-                        {p}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
+        {/* ── Setup ── */}
+        <View style={{ backgroundColor: colors.bg.secondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border.default, padding: 16, marginBottom: 12, gap: 14 }}>
+          <SLabel label="Setup" />
 
-            {/* Stack */}
-            <View>
-              {renderSectionLabel("Effective Stack (BB)")}
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <TextInput
-                  value={stackSize}
-                  onChangeText={setStackSize}
-                  placeholder="100"
-                  placeholderTextColor={colors.text.tertiary}
-                  keyboardType="numeric"
+          {/* Players */}
+          <View>
+            <Text style={{ color: colors.text.secondary, fontSize: 12, fontWeight: "600", marginBottom: 6 }}>Number of Players</Text>
+            <View style={{ flexDirection: "row", gap: 5 }}>
+              {[2,3,4,5,6,7,8,9].map(n => (
+                <TouchableOpacity key={n} onPress={() => { setNumPlayers(n); setVillainOverrides({}); }}
                   style={{
-                    flex: 1,
-                    backgroundColor: colors.bg.tertiary,
-                    borderRadius: radius.sm,
+                    flex: 1, paddingVertical: 9, borderRadius: radius.sm, alignItems: "center",
+                    backgroundColor: numPlayers === n ? colors.bg.brand : colors.bg.tertiary,
                     borderWidth: 1,
-                    borderColor: colors.border.default,
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                    color: colors.text.primary,
-                    fontSize: 14,
-                  }}
-                />
-                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>BB</Text>
-              </View>
+                    borderColor: numPlayers === n ? colors.border.brand : colors.border.default,
+                  }}>
+                  <Text style={{ fontSize: 13, fontWeight: "700", color: numPlayers === n ? colors.text.onBrand : colors.text.primary }}>{n}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
-        ))}
+
+          {/* Hero position */}
+          <View>
+            <Text style={{ color: colors.text.secondary, fontSize: 12, fontWeight: "600", marginBottom: 6 }}>Hero Position</Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+              {POSITIONS.map(p => {
+                const available = (POSITIONS_BY_COUNT[numPlayers] ?? []).includes(p);
+                return (
+                  <TouchableOpacity key={p} onPress={() => available && setHeroPosition(p)} disabled={!available}
+                    style={{
+                      paddingHorizontal: 12, paddingVertical: 7, borderRadius: radius.full,
+                      backgroundColor: heroPosition === p ? colors.bg.brand : available ? colors.bg.tertiary : colors.bg.secondary,
+                      borderWidth: 1,
+                      borderColor: heroPosition === p ? colors.border.brand : available ? colors.border.default : colors.border.subtle,
+                      opacity: available ? 1 : 0.35,
+                    }}>
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: heroPosition === p ? colors.text.onBrand : colors.text.primary }}>{p}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Stack size */}
+          <View>
+            <Text style={{ color: colors.text.secondary, fontSize: 12, fontWeight: "600", marginBottom: 6 }}>Effective Stack</Text>
+            <View style={{ flexDirection: "row", gap: 6, marginBottom: 8 }}>
+              {(["BB","$"] as StackMode[]).map(mode => (
+                <TouchableOpacity key={mode} onPress={() => setStackMode(mode)}
+                  style={{
+                    paddingHorizontal: 16, paddingVertical: 6, borderRadius: radius.full,
+                    backgroundColor: stackMode === mode ? colors.bg.brand : colors.bg.tertiary,
+                    borderWidth: 1,
+                    borderColor: stackMode === mode ? colors.border.brand : colors.border.default,
+                  }}>
+                  <Text style={{ fontSize: 13, fontWeight: "700", color: stackMode === mode ? colors.text.onBrand : colors.text.primary }}>{mode}</Text>
+                </TouchableOpacity>
+              ))}
+              {stackMode === "$" && (
+                <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={{ color: colors.text.tertiary, fontSize: 12 }}>1BB =</Text>
+                  <TextInput value={bbDollars} onChangeText={setBbDollars} placeholder="2"
+                    placeholderTextColor={colors.text.tertiary} keyboardType="numeric"
+                    style={{ flex: 1, backgroundColor: colors.bg.tertiary, borderRadius: 8, borderWidth: 1, borderColor: colors.border.default, paddingHorizontal: 8, paddingVertical: 6, color: colors.text.primary, fontSize: 13 }}
+                  />
+                  <Text style={{ color: colors.text.tertiary, fontSize: 12 }}>$</Text>
+                </View>
+              )}
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <TextInput value={stackSize} onChangeText={setStackSize}
+                placeholder={stackMode === "BB" ? "100" : "200"}
+                placeholderTextColor={colors.text.tertiary} keyboardType="numeric"
+                style={{ flex: 1, backgroundColor: colors.bg.tertiary, borderRadius: 8, borderWidth: 1, borderColor: colors.border.default, paddingHorizontal: 12, paddingVertical: 10, color: colors.text.primary, fontSize: 14 }}
+              />
+              <Text style={{ color: colors.text.secondary, fontSize: 13, fontWeight: "600" }}>{stackMode}</Text>
+            </View>
+            <Text style={{ color: colors.text.tertiary, fontSize: 11, marginTop: 4 }}>
+              {stackMode === "$" && stackSize ? `≈ ${stackBB} BB` : stackMode === "BB" && stackSize && bbDollars ? `≈ $${(parseFloat(stackSize) * parseFloat(bbDollars)).toFixed(0)}` : ""}
+            </Text>
+          </View>
+        </View>
 
         {/* Hole cards */}
-        {renderCard("Hole Cards", (
+        <View style={{ backgroundColor: colors.bg.secondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border.default, padding: 16, marginBottom: 12 }}>
+          <SLabel label="Hole Cards" />
           <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
             <FormCardSlot card={holeCards[0]} onPress={() => openPicker("hole1")} colors={colors} />
             <FormCardSlot card={holeCards[1]} onPress={() => openPicker("hole2")} colors={colors} />
-            {holesFilled && (
-              <Text style={{ color: colors.text.secondary, fontSize: 12, marginLeft: 4 }}>
-                Tap to change
-              </Text>
-            )}
+            {holesFilled && <Text style={{ color: colors.text.tertiary, fontSize: 12, marginLeft: 4 }}>Tap to change</Text>}
           </View>
-        ))}
+        </View>
 
-        {/* Preflop action */}
-        {renderCard("Preflop Action", renderActionRow(preflopAction, setPreflopAction))}
+        {/* Preflop */}
+        <View style={{ backgroundColor: colors.bg.secondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border.default, padding: 16, marginBottom: 12 }}>
+          <SLabel label="Preflop Actions" />
+          <ActionTimeline actions={preflopActions} onChange={setPreflopActions} colors={colors} radius={radius} />
+        </View>
 
         {/* Flop */}
-        {showFlop && !preflopFolded && renderCard("Flop", (
-          <View style={{ gap: 12 }}>
-            <View>
-              {renderSectionLabel("Board Cards")}
-              <View style={{ flexDirection: "row", gap: 8 }}>
-                <FormCardSlot card={flop[0]} onPress={() => openPicker("flop1")} colors={colors} />
-                <FormCardSlot card={flop[1]} onPress={() => openPicker("flop2")} colors={colors} />
-                <FormCardSlot card={flop[2]} onPress={() => openPicker("flop3")} colors={colors} />
-              </View>
+        {holesFilled && !preflopFolded && (
+          <View style={{ backgroundColor: colors.bg.secondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border.default, padding: 16, marginBottom: 12, gap: 12 }}>
+            <SLabel label="Flop" />
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <FormCardSlot card={flop[0]} onPress={() => openPicker("flop1")} colors={colors} />
+              <FormCardSlot card={flop[1]} onPress={() => openPicker("flop2")} colors={colors} />
+              <FormCardSlot card={flop[2]} onPress={() => openPicker("flop3")} colors={colors} />
             </View>
-            {flopFilled && renderActionRow(flopAction, setFlopAction)}
+            {flopFilled && <ActionTimeline actions={flopActions} onChange={setFlopActions} colors={colors} radius={radius} />}
           </View>
-        ))}
+        )}
 
         {/* Turn */}
-        {showTurn && !preflopFolded && !flopFolded && renderCard("Turn", (
-          <View style={{ gap: 12 }}>
-            <View>
-              {renderSectionLabel("Board Card")}
-              <FormCardSlot card={turn} onPress={() => openPicker("turn")} colors={colors} />
-            </View>
-            {turn && renderActionRow(turnAction, setTurnAction)}
+        {holesFilled && flopFilled && !preflopFolded && !flopFolded && (
+          <View style={{ backgroundColor: colors.bg.secondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border.default, padding: 16, marginBottom: 12, gap: 12 }}>
+            <SLabel label="Turn" />
+            <FormCardSlot card={turn} onPress={() => openPicker("turn")} colors={colors} />
+            {turn && <ActionTimeline actions={turnActions} onChange={setTurnActions} colors={colors} radius={radius} />}
           </View>
-        ))}
+        )}
 
         {/* River */}
-        {showRiver && !preflopFolded && !flopFolded && !turnFolded && renderCard("River", (
-          <View style={{ gap: 12 }}>
-            <View>
-              {renderSectionLabel("Board Card")}
-              <FormCardSlot card={river} onPress={() => openPicker("river")} colors={colors} />
-            </View>
-            {river && renderActionRow(riverAction, setRiverAction)}
+        {holesFilled && flopFilled && turn && !preflopFolded && !flopFolded && !turnFolded && (
+          <View style={{ backgroundColor: colors.bg.secondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border.default, padding: 16, marginBottom: 12, gap: 12 }}>
+            <SLabel label="River" />
+            <FormCardSlot card={river} onPress={() => openPicker("river")} colors={colors} />
+            {river && <ActionTimeline actions={riverActions} onChange={setRiverActions} colors={colors} radius={radius} />}
           </View>
-        ))}
+        )}
 
-        {/* Error state */}
+        {/* Error */}
         {error && (
-          <View style={{
-            backgroundColor: colors.bg.danger + "18",
-            borderWidth: 1,
-            borderColor: colors.border.danger,
-            borderRadius: radius.sm,
-            padding: 12,
-            marginBottom: 12,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 8,
-          }}>
+          <View style={{ backgroundColor: colors.bg.danger + "18", borderWidth: 1, borderColor: colors.border.danger, borderRadius: radius.sm, padding: 12, marginBottom: 12, flexDirection: "row", alignItems: "center", gap: 8 }}>
             <MaterialCommunityIcons name="alert-circle-outline" size={18} color={colors.text.danger} />
             <Text style={{ color: colors.text.danger, fontSize: 13, flex: 1 }}>{error}</Text>
             <TouchableOpacity onPress={analyzeHand}>
@@ -1002,40 +967,20 @@ export default function HandReviewScreen() {
           </View>
         )}
 
-        {/* Analyze button */}
-        <TouchableOpacity
-          onPress={analyzeHand}
-          disabled={!holesFilled || loading}
-          activeOpacity={0.85}
+        {/* Analyze */}
+        <TouchableOpacity onPress={analyzeHand} disabled={!holesFilled || loading} activeOpacity={0.85}
           style={{
             backgroundColor: holesFilled && !loading ? colors.bg.brand : colors.bg.tertiary,
-            borderRadius: radius.md,
-            paddingVertical: 16,
-            alignItems: "center",
-            flexDirection: "row",
-            justifyContent: "center",
-            gap: 8,
-            marginBottom: 8,
-          }}
-        >
-          {loading ? (
-            <ActivityIndicator color={colors.text.onBrand} size="small" />
-          ) : (
-            <MaterialCommunityIcons
-              name="robot-outline"
-              size={20}
-              color={holesFilled ? colors.text.onBrand : colors.text.disabled}
-            />
-          )}
-          <Text style={{
-            color: holesFilled && !loading ? colors.text.onBrand : colors.text.disabled,
-            fontSize: 16,
-            fontWeight: "700",
+            borderRadius: radius.md, paddingVertical: 16,
+            alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8, marginBottom: 8,
           }}>
+          {loading
+            ? <ActivityIndicator color={colors.text.onBrand} size="small" />
+            : <MaterialCommunityIcons name="robot-outline" size={20} color={holesFilled ? colors.text.onBrand : colors.text.disabled} />}
+          <Text style={{ color: holesFilled && !loading ? colors.text.onBrand : colors.text.disabled, fontSize: 16, fontWeight: "700" }}>
             {loading ? "Analyzing Hand…" : "Analyze Hand"}
           </Text>
         </TouchableOpacity>
-
         {!holesFilled && (
           <Text style={{ color: colors.text.tertiary, fontSize: 12, textAlign: "center" }}>
             Select your hole cards to enable analysis
@@ -1044,15 +989,24 @@ export default function HandReviewScreen() {
       </ScrollView>
 
       {/* Card picker */}
-      <CardPickerModal
-        visible={pickerVisible}
-        activeSlot={activeSlot}
-        usedCards={allUsed}
-        onSelect={handleCardSelect}
-        onClose={() => { setPickerVisible(false); setActiveSlot(null); }}
-        colors={colors}
-      />
+      <CardPickerModal visible={pickerVisible} usedCards={allUsed} onSelect={handleCardSelect}
+        onClose={() => { setPickerVisible(false); setActiveSlot(null); }} colors={colors} />
 
+      {/* Villain position picker */}
+      {editingSeat !== null && (
+        <VillainPositionModal
+          visible
+          seatIdx={editingSeat}
+          currentPos={villainOverrides[editingSeat] ?? null}
+          autoPos={autoPositionForSeat(editingSeat)}
+          heroPos={heroPosition}
+          takenPositions={[]}
+          onSelect={p => setVillainPos(editingSeat, p)}
+          onReset={() => resetVillainPos(editingSeat)}
+          onClose={() => setEditingSeat(null)}
+          colors={colors} radius={radius}
+        />
+      )}
     </>
   );
 }
