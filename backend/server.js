@@ -43,7 +43,7 @@ Only include streets that were actually played. Grades: A = excellent, B = good,
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 1024,
+        max_tokens: 4096,
         system: systemPrompt,
         messages: [{ role: "user", content: userMessage }],
       }),
