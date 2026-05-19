@@ -33,6 +33,21 @@ export const initDB = () => {
   try { db.execSync(`ALTER TABLE sessions ADD COLUMN rebuys TEXT DEFAULT '[]'`); } catch (_) {}
 
 
+  // Notes history
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS notes_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id INTEGER NOT NULL,
+      session_date TEXT,
+      session_venue TEXT,
+      session_profit REAL,
+      session_type TEXT,
+      raw_notes TEXT NOT NULL,
+      enhanced_notes TEXT,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
   // Settings key-value store
   db.execSync(`
     CREATE TABLE IF NOT EXISTS settings (
@@ -342,6 +357,45 @@ export const clearAllSessions = (): void => {
   db.runSync(`DELETE FROM sessions WHERE ${COMPLETED}`);
 };
 
+
+// ─── Notes History ────────────────────────────────────────────────────────────
+
+export type NoteEntry = {
+  id: number;
+  session_id: number;
+  session_date: string;
+  session_venue: string;
+  session_profit: number;
+  session_type: string;
+  raw_notes: string;
+  enhanced_notes: string | null;
+  created_at: number;
+};
+
+export const saveNoteEntry = (data: {
+  sessionId: number;
+  sessionDate: string;
+  sessionVenue: string;
+  sessionProfit: number;
+  sessionType: string;
+  rawNotes: string;
+  enhancedNotes: string | null;
+}): void => {
+  db.runSync(
+    `INSERT INTO notes_history
+       (session_id, session_date, session_venue, session_profit, session_type, raw_notes, enhanced_notes, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [data.sessionId, data.sessionDate, data.sessionVenue, data.sessionProfit,
+     data.sessionType, data.rawNotes, data.enhancedNotes, Date.now()]
+  );
+};
+
+export const getNoteHistory = (): NoteEntry[] =>
+  db.getAllSync(`SELECT * FROM notes_history ORDER BY created_at DESC`) as NoteEntry[];
+
+export const deleteNoteEntry = (id: number): void => {
+  db.runSync(`DELETE FROM notes_history WHERE id = ?`, [id]);
+};
 
 // Auto-initialize on import so getSetting is always safe to call
 initDB();

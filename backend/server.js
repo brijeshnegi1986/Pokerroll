@@ -69,6 +69,54 @@ Only include streets that were actually played. Grades: A = excellent, B = good,
   }
 });
 
+app.post("/api/enhance-notes", async (req, res) => {
+  if (!ANTHROPIC_API_KEY) {
+    return res.status(500).json({ error: "ANTHROPIC_API_KEY is not configured on the server." });
+  }
+  const { notes, sessionContext } = req.body;
+  if (!notes || typeof notes !== "string") {
+    return res.status(400).json({ error: "notes is required" });
+  }
+  const systemPrompt = `You are a poker session journal editor. Rewrite the provided poker session notes to be clear, well-structured and easy to read.
+Rules:
+- Fix grammar, spelling, and punctuation
+- Use bullet points for multiple observations or hands
+- Use correct poker terminology (c-bet, 3-bet, value bet, bluff, tilt, range, equity, etc.)
+- Preserve every piece of original content — do not add content that wasn't implied
+- Add concise section headers only when the notes naturally cover distinct topics (e.g. "Key Hands:", "Observations:", "Leaks to Fix:")
+- Keep the total length similar to the original (don't pad it out)
+- Return ONLY the improved notes text, with no preamble or explanation`;
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: [{ role: "user", content: `Session: ${sessionContext || "N/A"}\n\nNotes to improve:\n${notes}` }],
+      }),
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      let errMsg = `Anthropic API error ${response.status}`;
+      try { errMsg = JSON.parse(errText)?.error?.message ?? errMsg; } catch (_) {}
+      return res.status(response.status).json({ error: errMsg });
+    }
+    const data = await response.json();
+    const enhanced = data.content?.[0]?.text ?? notes;
+    res.json({ enhanced });
+  } catch (err) {
+    console.error("enhance-notes error:", err.message);
+    res.status(500).json({ error: "Internal server error: " + err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`PokerTracker AI proxy running on port ${PORT}`);
   console.log(`API key set: ${!!ANTHROPIC_API_KEY}`);
