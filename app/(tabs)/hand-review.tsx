@@ -1,4 +1,5 @@
 import { BACKEND_URL } from "@/constants/config";
+import { BB_DEFENSE, cellHand, RANKS as GRID_RANKS, rangePercent, RangeData, RFI } from "@/constants/ranges";
 import { addHandReview, deleteHandReview, getHandReviews, HandReview } from "@/db/database";
 import { usePokerTheme } from "@/hooks/use-poker-theme";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -20,7 +21,7 @@ type SlotKey = "hole1"|"hole2"|"flop1"|"flop2"|"flop3"|"turn"|"river";
 type Step = "setup"|"deal"|"preflop"|"flop"|"turn"|"river";
 
 interface StreetEntry {
-  context: string;  // optional: action before hero acted
+  context: string;
   action: ActionType;
   amount: string;
 }
@@ -70,6 +71,11 @@ const STEP_LABEL: Record<Step,string> = {
   flop:"Flop", turn:"Turn", river:"River",
 };
 
+const RFI_POSITIONS = ["UTG","HJ","CO","BTN","SB"] as const;
+const GRID_CELL = Math.floor((SCREEN_W - 48 - 20) / 13);
+const RANGE_ACTION_COLOR: Record<string,string> = { R:"#16a34a", C:"#2563eb", M:"#d97706" };
+const RANGE_ACTION_LABEL: Record<string,string> = { R:"Open/Raise", C:"Call/Defend", M:"Mixed" };
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function isRed(s: Suit) { return s === "h" || s === "d"; }
@@ -85,9 +91,6 @@ function stackInBB(size: string, mode: StackMode, bb: string): number {
   return mode === "BB" ? v : Math.round(v / (parseFloat(bb) || 1));
 }
 function needsAmount(t: ActionType) { return ["Raise","Bet","All-in"].includes(t); }
-function gradeColor(g: string, c: any) {
-  return g==="A" ? c.bg.success : g==="B" ? "#3b82f6" : g==="C" ? c.bg.warning : c.bg.danger;
-}
 function overallGrade(r: AIResult): string {
   const gs = [r.preflop?.grade, r.flop?.grade, r.turn?.grade, r.river?.grade].filter(Boolean) as string[];
   if (gs.includes("D")) return "D";
@@ -95,8 +98,20 @@ function overallGrade(r: AIResult): string {
   if (gs.includes("B")) return "B";
   return "A";
 }
-function gradeIsGood(g: string) { return g==="A" || g==="B"; }
 function defaultEntry(): StreetEntry { return { context:"", action:"Check", amount:"" }; }
+
+function decisionIcon(g: string): { icon: keyof typeof MaterialCommunityIcons.glyphMap; color: string } {
+  if (g === "A") return { icon: "check-all",   color: "#22c55e" };
+  if (g === "B") return { icon: "check",       color: "#f59e0b" };
+  if (g === "C") return { icon: "close",       color: "#f97316" };
+  return           { icon: "close-circle", color: "#ef4444" };
+}
+function evLabel(g: string): { text: string; color: string } {
+  if (g === "A") return { text: "+EV",        color: "#22c55e" };
+  if (g === "B") return { text: "Marginal",   color: "#f59e0b" };
+  if (g === "C") return { text: "−EV",        color: "#f97316" };
+  return           { text: "Big Mistake", color: "#ef4444" };
+}
 
 function buildUserMessage(
   holeCards: [Card,Card], position: Position,
@@ -105,7 +120,6 @@ function buildUserMessage(
   flop: [Card,Card,Card], turn: Card, river: Card,
   pf: StreetEntry, fl: StreetEntry, tu: StreetEntry, ri: StreetEntry,
 ): string {
-  const unit = stackMode;
   const stackBB = stackInBB(stackSize, stackMode, bbDollars);
   const stackDisplay = stackMode === "$" ? `$${stackSize} (~${stackBB}BB)` : `${stackSize}BB`;
 
@@ -285,7 +299,6 @@ function ActionEntry({ entry, onChange, stackMode, colors, radius }: {
 }) {
   return (
     <View style={{ gap:14 }}>
-      {/* Context */}
       <View>
         <Text style={{ color: colors.text.secondary, fontSize:12, fontWeight:"600", marginBottom:6 }}>
           Action before you <Text style={{ color: colors.text.tertiary, fontWeight:"400" }}>(optional)</Text>
@@ -305,7 +318,6 @@ function ActionEntry({ entry, onChange, stackMode, colors, radius }: {
         />
       </View>
 
-      {/* Hero action */}
       <View>
         <Text style={{ color: colors.text.secondary, fontSize:12, fontWeight:"600", marginBottom:8 }}>Your action</Text>
         <View style={{ flexDirection:"row", flexWrap:"wrap", gap:8 }}>
@@ -333,7 +345,6 @@ function ActionEntry({ entry, onChange, stackMode, colors, radius }: {
         </View>
       </View>
 
-      {/* Amount */}
       {needsAmount(entry.action) && (
         <View style={{ flexDirection:"row", alignItems:"center", gap:10 }}>
           <TextInput
@@ -356,44 +367,209 @@ function ActionEntry({ entry, onChange, stackMode, colors, radius }: {
   );
 }
 
-// ─── Results: Grade Badge + Street Panel ──────────────────────────────────────
+// ─── GTO Range Grid ───────────────────────────────────────────────────────────
 
-function GradeBadge({ grade, colors }: { grade: string; colors: any }) {
+function MiniRangeGrid({ data }: { data: RangeData }) {
   return (
-    <View style={{ width:38, height:38, borderRadius:19, backgroundColor: gradeColor(grade, colors), alignItems:"center", justifyContent:"center" }}>
-      <Text style={{ color:"#fff", fontSize:17, fontWeight:"900" }}>{grade}</Text>
+    <View style={{ paddingHorizontal: 8 }}>
+      <View style={{ flexDirection:"row", marginLeft:20, marginBottom:2 }}>
+        {GRID_RANKS.map(r => (
+          <View key={r} style={{ width: GRID_CELL, alignItems:"center" }}>
+            <Text style={{ fontSize:6, fontWeight:"700", color:"rgba(255,255,255,0.4)" }}>{r}</Text>
+          </View>
+        ))}
+      </View>
+      {GRID_RANKS.map((rowRank, row) => (
+        <View key={rowRank} style={{ flexDirection:"row", marginBottom:1 }}>
+          <View style={{ width:20, justifyContent:"center" }}>
+            <Text style={{ fontSize:6, fontWeight:"700", color:"rgba(255,255,255,0.4)" }}>{rowRank}</Text>
+          </View>
+          {GRID_RANKS.map((_, col) => {
+            const hand = cellHand(row, col);
+            const action = data[hand];
+            const isPair = row === col;
+            const bg = action ? RANGE_ACTION_COLOR[action] : isPair ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.03)";
+            const label = hand.length >= 2 ? hand.slice(0, 2) : hand;
+            return (
+              <View key={col} style={{
+                width: GRID_CELL, height: GRID_CELL, marginHorizontal:0.5,
+                backgroundColor: bg, borderRadius:2, alignItems:"center", justifyContent:"center",
+                borderWidth: isPair ? 0.5 : 0, borderColor:"rgba(255,255,255,0.12)",
+              }}>
+                <Text style={{ fontSize:5.5, fontWeight:"700", color: action ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.18)" }}>
+                  {label}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      ))}
     </View>
   );
 }
 
-function StreetPanel({ street, data, boardCards, colors }: {
-  street: string; data: StreetAnalysis; boardCards?: Card[]; colors: any;
+// ─── Range Chart Modal ────────────────────────────────────────────────────────
+
+function RangeModal({ visible, position, onClose, colors }: {
+  visible: boolean; position: Position; onClose: () => void; colors: any;
 }) {
-  const boards = (boardCards ?? []).filter(Boolean);
+  const isBB  = position === "BB";
+  const isRFI = (RFI_POSITIONS as readonly string[]).includes(position);
+  const [bbPos, setBbPos] = useState<string>(Object.keys(BB_DEFENSE)[0] ?? "BTN");
+
+  const currentData: RangeData = isBB
+    ? (BB_DEFENSE[bbPos] ?? {})
+    : (RFI[position] ?? {});
+
+  const pct = rangePercent(currentData);
+  const actionsInChart = Array.from(new Set(Object.values(currentData))) as string[];
+  const title = isBB ? "BB Defense Range" : `${position} Open Range (RFI)`;
+
   return (
-    <View style={{ backgroundColor: colors.bg.secondary, borderRadius:16, borderWidth:1, borderColor: colors.border.default, padding:16, marginBottom:12 }}>
-      <View style={{ flexDirection:"row", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-        <Text style={{ color: colors.text.primary, fontSize:16, fontWeight:"700" }}>{street}</Text>
-        <GradeBadge grade={data.grade} colors={colors} />
-      </View>
-      {boards.length > 0 && (
-        <View style={{ flexDirection:"row", gap:6, marginBottom:10 }}>
-          {boards.map((c, i) => {
-            const p = parseCard(c);
-            return p ? (
-              <View key={i} style={{ width:34, height:46, borderRadius:5, backgroundColor:"#fff", alignItems:"center", justifyContent:"center" }}>
-                <Text style={{ fontSize:13, fontWeight:"800", lineHeight:16, color: isRed(p.suit) ? "#dc2626" : "#1e293b" }}>{p.rank}</Text>
-                <Text style={{ fontSize:11, fontWeight:"700", lineHeight:13, color: isRed(p.suit) ? "#dc2626" : "#1e293b" }}>{SUIT_SYMBOLS[p.suit]}</Text>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex:1, backgroundColor:"rgba(0,0,0,0.82)", justifyContent:"flex-end" }}>
+        <View style={{ backgroundColor: colors.bg.secondary, borderTopLeftRadius:24, borderTopRightRadius:24, paddingBottom:36 }}>
+          {/* Header */}
+          <View style={{ flexDirection:"row", justifyContent:"space-between", alignItems:"center", padding:16, paddingBottom:8 }}>
+            <View>
+              <Text style={{ color: colors.text.primary, fontSize:16, fontWeight:"800" }}>{title}</Text>
+              <Text style={{ color: colors.text.tertiary, fontSize:11, marginTop:2 }}>
+                Range: <Text style={{ color: colors.text.secondary, fontWeight:"700" }}>{pct}%</Text> of hands · GTO 6-max baseline
+              </Text>
+            </View>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top:12, bottom:12, left:12, right:12 }}>
+              <MaterialCommunityIcons name="close" size={22} color={colors.text.secondary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* BB: vs-position selector */}
+          {isBB && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal:16, gap:6, paddingBottom:10 }}>
+              {Object.keys(BB_DEFENSE).map(pos => (
+                <TouchableOpacity key={pos} onPress={() => setBbPos(pos)}
+                  style={{ paddingHorizontal:12, paddingVertical:6, borderRadius:999,
+                    backgroundColor: bbPos===pos ? colors.bg.brand : colors.bg.tertiary,
+                    borderWidth:1, borderColor: bbPos===pos ? colors.border.brand : colors.border.default }}>
+                  <Text style={{ fontSize:12, fontWeight:"700", color: bbPos===pos ? colors.text.onBrand : colors.text.primary }}>
+                    vs {pos}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+
+          {/* Legend */}
+          <View style={{ flexDirection:"row", gap:10, paddingHorizontal:16, paddingBottom:10 }}>
+            {actionsInChart.map(a => (
+              <View key={a} style={{ flexDirection:"row", alignItems:"center", gap:4 }}>
+                <View style={{ width:8, height:8, borderRadius:2, backgroundColor: RANGE_ACTION_COLOR[a] }} />
+                <Text style={{ color: colors.text.tertiary, fontSize:10 }}>{RANGE_ACTION_LABEL[a]}</Text>
               </View>
-            ) : null;
-          })}
+            ))}
+          </View>
+
+          {/* Grid */}
+          <MiniRangeGrid data={currentData} />
+
+          {/* Guide */}
+          <View style={{ marginHorizontal:16, marginTop:10 }}>
+            <Text style={{ color: colors.text.tertiary, fontSize:10, lineHeight:15 }}>
+              Top-right = suited (AKs) · Bottom-left = offsuit (AKo) · Diagonal = pairs (AA)
+            </Text>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Street Result Card ───────────────────────────────────────────────────────
+
+function StreetResultCard({ street, data, boardCards, position, onShowRange, colors, radius }: {
+  street: string; data: StreetAnalysis; boardCards?: Card[];
+  position: Position; onShowRange: () => void; colors: any; radius: any;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const { icon, color: iconColor } = decisionIcon(data.grade);
+  const ev = evLabel(data.grade);
+  const boards = (boardCards ?? []).filter(Boolean);
+
+  return (
+    <View style={{
+      backgroundColor: colors.bg.secondary, borderRadius:16, borderWidth:1,
+      borderColor: colors.border.default, marginBottom:10, overflow:"hidden",
+    }}>
+      {/* Collapsed header — always visible */}
+      <TouchableOpacity onPress={() => setExpanded(e => !e)} activeOpacity={0.75}
+        style={{ flexDirection:"row", alignItems:"center", padding:14, gap:12 }}>
+        {/* Decision icon */}
+        <MaterialCommunityIcons name={icon} size={30} color={iconColor} />
+
+        {/* Street label + hero action */}
+        <View style={{ flex:1 }}>
+          <Text style={{ color: colors.text.tertiary, fontSize:10, fontWeight:"700", textTransform:"uppercase", letterSpacing:0.8 }}>{street}</Text>
+          <Text style={{ color: colors.text.primary, fontSize:14, fontWeight:"700", marginTop:1 }} numberOfLines={1}>
+            {data.heroAction}
+          </Text>
+        </View>
+
+        {/* Board mini-cards */}
+        {boards.length > 0 && (
+          <View style={{ flexDirection:"row", gap:3 }}>
+            {boards.map((c, i) => {
+              const p = parseCard(c);
+              return p ? (
+                <View key={i} style={{ width:22, height:30, borderRadius:3, backgroundColor:"#fff", alignItems:"center", justifyContent:"center" }}>
+                  <Text style={{ fontSize:9, fontWeight:"800", lineHeight:11, color: isRed(p.suit) ? "#dc2626" : "#1e293b" }}>{p.rank}</Text>
+                  <Text style={{ fontSize:8, fontWeight:"700", lineHeight:10, color: isRed(p.suit) ? "#dc2626" : "#1e293b" }}>{SUIT_SYMBOLS[p.suit]}</Text>
+                </View>
+              ) : null;
+            })}
+          </View>
+        )}
+
+        {/* EV badge */}
+        <View style={{ backgroundColor: ev.color + "22", borderRadius:8, paddingHorizontal:9, paddingVertical:4 }}>
+          <Text style={{ color: ev.color, fontSize:11, fontWeight:"800" }}>{ev.text}</Text>
+        </View>
+
+        {/* Expand chevron */}
+        <MaterialCommunityIcons
+          name={expanded ? "chevron-up" : "chevron-down"}
+          size={20} color={colors.text.tertiary}
+        />
+      </TouchableOpacity>
+
+      {/* Expanded detail */}
+      {expanded && (
+        <View style={{ borderTopWidth:1, borderColor: colors.border.default, padding:14, gap:10 }}>
+          {([
+            ["Assessment", data.assessment],
+            ["Suggestion", data.suggestion],
+            ["Reasoning",  data.reasoning],
+          ] as const).map(([l, v]) => (
+            <Text key={l} style={{ color: colors.text.secondary, fontSize:13, lineHeight:19 }}>
+              <Text style={{ fontWeight:"700", color: colors.text.primary }}>{l}: </Text>{v}
+            </Text>
+          ))}
+
+          {/* View Range button */}
+          <TouchableOpacity onPress={onShowRange} activeOpacity={0.8}
+            style={{
+              flexDirection:"row", alignItems:"center", gap:8,
+              marginTop:4, paddingVertical:10, paddingHorizontal:14,
+              borderRadius: radius.sm, borderWidth:1,
+              borderColor: colors.border.brand, backgroundColor: colors.bg.brand + "14",
+            }}>
+            <MaterialCommunityIcons name="grid" size={16} color={colors.text.brand} />
+            <Text style={{ color: colors.text.brand, fontSize:13, fontWeight:"700", flex:1 }}>
+              View GTO Range Chart
+            </Text>
+            <MaterialCommunityIcons name="arrow-right" size={14} color={colors.text.brand} />
+          </TouchableOpacity>
         </View>
       )}
-      {([["Action",data.heroAction],["Assessment",data.assessment],["Suggestion",data.suggestion],["Reasoning",data.reasoning]] as const).map(([l,v]) => (
-        <Text key={l} style={{ color: colors.text.secondary, fontSize:13, marginBottom:5, lineHeight:18 }}>
-          <Text style={{ fontWeight:"700", color: colors.text.primary }}>{l}: </Text>{v}
-        </Text>
-      ))}
     </View>
   );
 }
@@ -405,6 +581,8 @@ function HistoryModal({ visible, onClose, colors, radius }: {
 }) {
   const [items] = useState(() => getHandReviews(30));
   const [expanded, setExpanded] = useState<HandReview|null>(null);
+  const [rangeVisible, setRangeVisible] = useState(false);
+  const [rangePos, setRangePos] = useState<Position>("BTN");
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -424,19 +602,25 @@ function HistoryModal({ visible, onClose, colors, radius }: {
               let parsed: AIResult|null = null;
               try { parsed = JSON.parse(expanded.result_json); } catch {}
               if (!parsed) return <Text style={{ color: colors.text.secondary }}>Could not load.</Text>;
+              const pos = expanded.position as Position;
               return (
                 <>
-                  <View style={{ flexDirection:"row", alignItems:"center", gap:10, marginBottom:16 }}>
+                  <View style={{ flexDirection:"row", alignItems:"center", gap:10, marginBottom:16, flexWrap:"wrap" }}>
                     <Text style={{ color: colors.text.primary, fontSize:20, fontWeight:"800" }}>{expanded.hole_cards}</Text>
                     <View style={{ backgroundColor: colors.bg.tertiary, borderRadius: radius.full, paddingHorizontal:10, paddingVertical:4 }}>
-                      <Text style={{ color: colors.text.secondary, fontSize:12, fontWeight:"700" }}>{expanded.position} · {expanded.num_players}p · {expanded.stack_display}</Text>
+                      <Text style={{ color: colors.text.secondary, fontSize:12, fontWeight:"700" }}>{pos} · {expanded.num_players}p · {expanded.stack_display}</Text>
                     </View>
-                    <MaterialCommunityIcons name={gradeIsGood(expanded.overall_grade) ? "check-circle" : "close-circle"} size={26} color={gradeIsGood(expanded.overall_grade) ? "#22c55e" : "#ef4444"} style={{ marginLeft:"auto" }} />
+                    <View style={{ marginLeft:"auto", flexDirection:"row", alignItems:"center", gap:6 }}>
+                      <MaterialCommunityIcons {...decisionIcon(expanded.overall_grade)} size={26} />
+                      <Text style={{ color: evLabel(expanded.overall_grade).color, fontSize:13, fontWeight:"800" }}>
+                        {evLabel(expanded.overall_grade).text}
+                      </Text>
+                    </View>
                   </View>
-                  {parsed.preflop && <StreetPanel street="Preflop" data={parsed.preflop} colors={colors} />}
-                  {parsed.flop && <StreetPanel street="Flop" data={parsed.flop} colors={colors} />}
-                  {parsed.turn && <StreetPanel street="Turn" data={parsed.turn} colors={colors} />}
-                  {parsed.river && <StreetPanel street="River" data={parsed.river} colors={colors} />}
+                  {parsed.preflop && <StreetResultCard street="Preflop" data={parsed.preflop} position={pos} onShowRange={() => { setRangePos(pos); setRangeVisible(true); }} colors={colors} radius={radius} />}
+                  {parsed.flop   && <StreetResultCard street="Flop"    data={parsed.flop}    position={pos} onShowRange={() => { setRangePos(pos); setRangeVisible(true); }} colors={colors} radius={radius} />}
+                  {parsed.turn   && <StreetResultCard street="Turn"    data={parsed.turn}    position={pos} onShowRange={() => { setRangePos(pos); setRangeVisible(true); }} colors={colors} radius={radius} />}
+                  {parsed.river  && <StreetResultCard street="River"   data={parsed.river}   position={pos} onShowRange={() => { setRangePos(pos); setRangeVisible(true); }} colors={colors} radius={radius} />}
                   <View style={{ backgroundColor: colors.bg.secondary, borderRadius:16, borderWidth:1, borderColor: colors.border.brand, padding:16 }}>
                     <Text style={{ color: colors.text.brand, fontSize:12, fontWeight:"700", letterSpacing:1, textTransform:"uppercase", marginBottom:8 }}>Summary</Text>
                     <Text style={{ color: colors.text.primary, fontSize:14, lineHeight:21 }}>{parsed.summary}</Text>
@@ -450,17 +634,18 @@ function HistoryModal({ visible, onClose, colors, radius }: {
               <Text style={{ color: colors.text.tertiary, fontSize:15 }}>No reviews saved yet</Text>
             </View>
           ) : items.map(item => {
-            const good = gradeIsGood(item.overall_grade);
+            const { icon, color: iconColor } = decisionIcon(item.overall_grade);
+            const ev = evLabel(item.overall_grade);
             const date = new Date(item.created_at);
             return (
               <TouchableOpacity key={item.id} onPress={() => setExpanded(item)}
                 style={{ backgroundColor: colors.bg.secondary, borderRadius: radius.md, borderWidth:1, borderColor: colors.border.default, padding:14, marginBottom:10, flexDirection:"row", alignItems:"center", gap:12 }}>
-                <MaterialCommunityIcons name={good ? "check-circle" : "close-circle"} size={34} color={good ? "#22c55e" : "#ef4444"} />
+                <MaterialCommunityIcons name={icon} size={32} color={iconColor} />
                 <View style={{ flex:1 }}>
                   <View style={{ flexDirection:"row", alignItems:"center", gap:8, marginBottom:3 }}>
                     <Text style={{ color: colors.text.primary, fontSize:17, fontWeight:"800" }}>{item.hole_cards}</Text>
-                    <View style={{ backgroundColor: good ? "#22c55e18" : "#ef444418", borderRadius: radius.full, paddingHorizontal:8, paddingVertical:2 }}>
-                      <Text style={{ color: good ? "#22c55e" : "#ef4444", fontSize:11, fontWeight:"800" }}>Grade {item.overall_grade}</Text>
+                    <View style={{ backgroundColor: ev.color + "20", borderRadius: radius.full, paddingHorizontal:8, paddingVertical:2 }}>
+                      <Text style={{ color: ev.color, fontSize:11, fontWeight:"800" }}>{ev.text}</Text>
                     </View>
                   </View>
                   <Text style={{ color: colors.text.secondary, fontSize:12 }}>{item.position} · {item.num_players}p · {item.stack_display}</Text>
@@ -468,13 +653,13 @@ function HistoryModal({ visible, onClose, colors, radius }: {
                     {date.toLocaleDateString(undefined,{month:"short",day:"numeric"})} · {date.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})}
                   </Text>
                 </View>
-                <View style={{ width:36, height:36, borderRadius:18, backgroundColor: gradeColor(item.overall_grade, colors), alignItems:"center", justifyContent:"center" }}>
-                  <Text style={{ color:"#fff", fontSize:16, fontWeight:"900" }}>{item.overall_grade}</Text>
-                </View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={colors.text.tertiary} />
               </TouchableOpacity>
             );
           })}
         </ScrollView>
+
+        <RangeModal visible={rangeVisible} position={rangePos} onClose={() => setRangeVisible(false)} colors={colors} />
       </View>
     </Modal>
   );
@@ -510,6 +695,10 @@ export default function HandReviewScreen() {
   const [historyVisible, setHistoryVisible] = useState(false);
   const [historyKey, setHistoryKey] = useState(0);
 
+  // ── Range modal ──
+  const [rangeVisible, setRangeVisible] = useState(false);
+  const [rangePos, setRangePos] = useState<Position>("BTN");
+
   // ── Derived ──
   const holesOk = !!(holeCards[0] && holeCards[1]);
   const flopOk  = !!(flop[0] && flop[1] && flop[2]);
@@ -519,7 +708,6 @@ export default function HandReviewScreen() {
   const allUsed  = allSelected(holeCards, flop, turn, river);
   const availablePositions = POSITIONS_BY_COUNT[numPlayers] ?? [];
 
-  // Visible steps for progress bar
   const steps: Step[] = ["setup","deal","preflop",
     ...(!pfFolded ? ["flop" as Step] : []),
     ...(!pfFolded && !flFolded ? ["turn" as Step] : []),
@@ -528,15 +716,14 @@ export default function HandReviewScreen() {
 
   // ── Navigation ──
   function goNext() {
-    const idx = STEP_ORDER.indexOf(step);
     if (step === "preflop" && pfFolded) { analyzeHand(); return; }
     if (step === "flop"    && flFolded) { analyzeHand(); return; }
     if (step === "turn"    && tuFolded) { analyzeHand(); return; }
     if (step === "river")              { analyzeHand(); return; }
-    // Advance to next valid step
     if (step === "preflop" && !pfFolded) { setStep("flop"); return; }
     if (step === "flop"    && !flFolded) { setStep("turn"); return; }
     if (step === "turn"    && !tuFolded) { setStep("river"); return; }
+    const idx = STEP_ORDER.indexOf(step);
     setStep(STEP_ORDER[idx + 1] as Step);
   }
 
@@ -618,24 +805,26 @@ export default function HandReviewScreen() {
     } finally { setLoading(false); }
   }
 
-  // ── Is the Continue/Analyze button the analyze action? ──
   const isAnalyzeStep = step==="river" || (step==="preflop" && pfFolded) || (step==="flop" && flFolded) || (step==="turn" && tuFolded);
   const nextLabel = isAnalyzeStep ? "Analyze Hand" : step==="preflop" && !pfFolded ? "Flop →" : step==="flop" && !flFolded ? "Turn →" : step==="turn" && !tuFolded ? "River →" : "Continue →";
 
   // ── Results view ──
   if (result) {
     const grade = overallGrade(result);
+    const { icon: overallIcon, color: overallIconColor } = decisionIcon(grade);
+    const overallEv = evLabel(grade);
+
     return (
       <View style={{ flex:1, backgroundColor: colors.bg.primary }}>
         <ScrollView contentContainerStyle={{ padding:16, paddingBottom:140 }} showsVerticalScrollIndicator={false}>
           {/* Header */}
           <View style={{ flexDirection:"row", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
-            <View>
-              <Text style={{ color: colors.text.primary, fontSize:22, fontWeight:"800" }}>Hand Analysis</Text>
-              <View style={{ flexDirection:"row", alignItems:"center", gap:6, marginTop:4 }}>
-                <MaterialCommunityIcons name={gradeIsGood(grade) ? "check-circle" : "close-circle"} size={18} color={gradeIsGood(grade) ? "#22c55e" : "#ef4444"} />
-                <Text style={{ color: gradeIsGood(grade) ? "#22c55e" : "#ef4444", fontSize:13, fontWeight:"700" }}>
-                  {gradeIsGood(grade) ? "Well played" : "Needs improvement"} · Grade {grade}
+            <View style={{ flexDirection:"row", alignItems:"center", gap:12 }}>
+              <MaterialCommunityIcons name={overallIcon} size={36} color={overallIconColor} />
+              <View>
+                <Text style={{ color: colors.text.primary, fontSize:20, fontWeight:"800" }}>Hand Analysis</Text>
+                <Text style={{ color: overallEv.color, fontSize:13, fontWeight:"700", marginTop:2 }}>
+                  {overallEv.text} · Overall Grade {grade}
                 </Text>
               </View>
             </View>
@@ -667,15 +856,43 @@ export default function HandReviewScreen() {
             </View>
           </View>
 
-          {/* Streets */}
-          {result.preflop && <StreetPanel street="Preflop" data={result.preflop} colors={colors} />}
-          {result.flop && <StreetPanel street="Flop" data={result.flop} boardCards={[flop[0],flop[1],flop[2]]} colors={colors} />}
-          {result.turn && <StreetPanel street="Turn" data={result.turn} boardCards={[turn]} colors={colors} />}
-          {result.river && <StreetPanel street="River" data={result.river} boardCards={[river]} colors={colors} />}
+          {/* Tap-to-expand street cards */}
+          <Text style={{ color: colors.text.tertiary, fontSize:11, fontWeight:"600", textTransform:"uppercase", letterSpacing:0.8, marginBottom:10 }}>
+            Tap any street to see detail + range chart
+          </Text>
+
+          {result.preflop && (
+            <StreetResultCard
+              street="Preflop" data={result.preflop} position={heroPosition}
+              onShowRange={() => { setRangePos(heroPosition); setRangeVisible(true); }}
+              colors={colors} radius={radius}
+            />
+          )}
+          {result.flop && (
+            <StreetResultCard
+              street="Flop" data={result.flop} boardCards={[flop[0],flop[1],flop[2]]} position={heroPosition}
+              onShowRange={() => { setRangePos(heroPosition); setRangeVisible(true); }}
+              colors={colors} radius={radius}
+            />
+          )}
+          {result.turn && (
+            <StreetResultCard
+              street="Turn" data={result.turn} boardCards={[turn]} position={heroPosition}
+              onShowRange={() => { setRangePos(heroPosition); setRangeVisible(true); }}
+              colors={colors} radius={radius}
+            />
+          )}
+          {result.river && (
+            <StreetResultCard
+              street="River" data={result.river} boardCards={[river]} position={heroPosition}
+              onShowRange={() => { setRangePos(heroPosition); setRangeVisible(true); }}
+              colors={colors} radius={radius}
+            />
+          )}
 
           {/* Summary */}
-          <View style={{ backgroundColor: colors.bg.secondary, borderRadius:16, borderWidth:1, borderColor: colors.border.brand, padding:16, marginBottom:20 }}>
-            <Text style={{ color: colors.text.brand, fontSize:12, fontWeight:"700", letterSpacing:1, textTransform:"uppercase", marginBottom:8 }}>Summary</Text>
+          <View style={{ backgroundColor: colors.bg.secondary, borderRadius:16, borderWidth:1, borderColor: colors.border.brand, padding:16, marginBottom:20, marginTop:4 }}>
+            <Text style={{ color: colors.text.brand, fontSize:12, fontWeight:"700", letterSpacing:1, textTransform:"uppercase", marginBottom:8 }}>Overall Summary</Text>
             <Text style={{ color: colors.text.primary, fontSize:14, lineHeight:22 }}>{result.summary}</Text>
           </View>
 
@@ -684,6 +901,7 @@ export default function HandReviewScreen() {
           </TouchableOpacity>
         </ScrollView>
 
+        <RangeModal visible={rangeVisible} position={rangePos} onClose={() => setRangeVisible(false)} colors={colors} />
         <HistoryModal key={historyKey} visible={historyVisible} onClose={() => setHistoryVisible(false)} colors={colors} radius={radius} />
       </View>
     );
@@ -711,7 +929,6 @@ export default function HandReviewScreen() {
               <Text style={{ color: colors.text.secondary, fontSize:14 }}>Configure the table before reviewing</Text>
             </View>
 
-            {/* Players */}
             <View>
               <Text style={{ color: colors.text.secondary, fontSize:13, fontWeight:"700", marginBottom:10 }}>Number of players</Text>
               <View style={{ flexDirection:"row", gap:6 }}>
@@ -726,7 +943,6 @@ export default function HandReviewScreen() {
               </View>
             </View>
 
-            {/* Hero position */}
             <View>
               <Text style={{ color: colors.text.secondary, fontSize:13, fontWeight:"700", marginBottom:10 }}>Your position</Text>
               <View style={{ flexDirection:"row", flexWrap:"wrap", gap:8 }}>
@@ -746,7 +962,6 @@ export default function HandReviewScreen() {
               </View>
             </View>
 
-            {/* Stack */}
             <View>
               <Text style={{ color: colors.text.secondary, fontSize:13, fontWeight:"700", marginBottom:10 }}>Effective stack</Text>
               <View style={{ flexDirection:"row", gap:6, marginBottom:10 }}>
@@ -923,7 +1138,6 @@ export default function HandReviewScreen() {
         paddingHorizontal:16, paddingTop:12, paddingBottom:Platform.OS==="ios" ? 34 : 16,
         flexDirection:"row", gap:12,
       }}>
-        {/* Back / History */}
         <View style={{ flexDirection:"row", gap:8 }}>
           {step !== "setup" && (
             <TouchableOpacity onPress={goBack}
@@ -938,7 +1152,6 @@ export default function HandReviewScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Continue / Analyze */}
         <TouchableOpacity onPress={isAnalyzeStep ? analyzeHand : goNext}
           disabled={loading || (step==="deal" && !holesOk) || (step==="flop" && !flopOk) || (step==="turn" && !turn) || (step==="river" && !river)}
           activeOpacity={0.85}
@@ -963,7 +1176,6 @@ export default function HandReviewScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Card picker */}
       <CardPickerModal
         visible={pickerVisible} activeSlot={activeSlot}
         usedCards={allUsed.filter(c => {
@@ -981,7 +1193,6 @@ export default function HandReviewScreen() {
         colors={colors}
       />
 
-      {/* History */}
       <HistoryModal key={historyKey} visible={historyVisible} onClose={() => setHistoryVisible(false)} colors={colors} radius={radius} />
     </KeyboardAvoidingView>
   );
