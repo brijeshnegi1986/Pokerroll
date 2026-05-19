@@ -3,7 +3,7 @@ import { usePokerTheme } from "@/hooks/use-poker-theme";
 import { PokerRollLogo } from "@/components/PokerRollLogo";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -60,6 +60,21 @@ const POSITIONS_BY_COUNT: Record<number, Position[]> = {
 };
 
 const SCREEN_W = Dimensions.get("window").width;
+
+// Clockwise action order per street (first = first to act)
+const PREFLOP_ORDER: Position[] = ["UTG","UTG+1","MP","HJ","CO","BTN","SB","BB"];
+const POSTFLOP_ORDER: Position[] = ["SB","BB","UTG","UTG+1","MP","HJ","CO","BTN"];
+
+// Returns true if hero is the FIRST actor on this street given active player count
+function heroActsFirst(heroPos: Position, street: "preflop" | "postflop", numPlayers: number): boolean {
+  const order = street === "preflop" ? PREFLOP_ORDER : POSTFLOP_ORDER;
+  const pool = POSITIONS_BY_COUNT[numPlayers] ?? [];
+  for (const pos of order) {
+    if (!pool.includes(pos as Position)) continue;
+    return pos === heroPos;
+  }
+  return true;
+}
 
 // ─── Table layout ─────────────────────────────────────────────────────────────
 // Seats sit with their centres on the table ellipse edge.
@@ -386,20 +401,20 @@ function VillainPositionModal({
           {/* Position grid */}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
             {POSITIONS.map(p => {
-              const isHeroPos = p === heroPos;
+              const isTaken = takenPositions.includes(p);
               const isSelected = (currentPos ?? autoPos) === p;
               return (
                 <TouchableOpacity
                   key={p}
-                  disabled={isHeroPos}
+                  disabled={isTaken}
                   onPress={() => onSelect(p)}
                   style={{
                     paddingHorizontal: 16, paddingVertical: 10,
                     borderRadius: radius.full,
                     backgroundColor: isSelected ? colors.bg.brand : colors.bg.tertiary,
                     borderWidth: 1,
-                    borderColor: isSelected ? colors.border.brand : isHeroPos ? colors.border.subtle : colors.border.default,
-                    opacity: isHeroPos ? 0.35 : 1,
+                    borderColor: isSelected ? colors.border.brand : isTaken ? colors.border.subtle : colors.border.default,
+                    opacity: isTaken ? 0.35 : 1,
                   }}>
                   <Text style={{
                     fontSize: 13, fontWeight: "700",
@@ -410,9 +425,9 @@ function VillainPositionModal({
             })}
           </View>
 
-          {/* Hero position note */}
+          {/* Taken positions note */}
           <Text style={{ color: colors.text.tertiary, fontSize: 11, marginBottom: 16 }}>
-            <Text style={{ color: colors.text.brand }}>{heroPos}</Text> is reserved for Hero
+            <Text style={{ color: colors.text.brand }}>{heroPos}</Text> is reserved for Hero · Dimmed positions are taken
           </Text>
 
           {/* Reset button */}
@@ -444,14 +459,50 @@ function VillainPositionModal({
   );
 }
 
+// Auto-advance sequences: after picking a card for a slot, move to the next slot
+// in the same batch (both hole cards, all three flop cards) before closing.
+const SLOT_NEXT: Partial<Record<SlotKey, SlotKey>> = {
+  hole1: "hole2",
+  flop1: "flop2",
+  flop2: "flop3",
+};
+
+const SLOT_LABEL: Record<SlotKey, string> = {
+  hole1: "Hole Card 1 of 2",
+  hole2: "Hole Card 2 of 2",
+  flop1: "Flop Card 1 of 3",
+  flop2: "Flop Card 2 of 3",
+  flop3: "Flop Card 3 of 3",
+  turn:  "Turn Card",
+  river: "River Card",
+};
+
+// Dot progress indicator shown inside the picker
+function SlotProgress({ slot }: { slot: SlotKey }) {
+  const groups: SlotKey[][] = [["hole1","hole2"],["flop1","flop2","flop3"]];
+  const group = groups.find(g => g.includes(slot));
+  if (!group || group.length < 2) return null;
+  return (
+    <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
+      {group.map(s => (
+        <View key={s} style={{
+          width: s === slot ? 18 : 6, height: 6, borderRadius: 3,
+          backgroundColor: s === slot ? "#f59e0b" : "rgba(255,255,255,0.25)",
+        }} />
+      ))}
+    </View>
+  );
+}
+
 // ─── Card Picker Modal ────────────────────────────────────────────────────────
 
 function CardPickerModal({
-  visible, usedCards, onSelect, onClose, colors,
+  visible, activeSlot, usedCards, onSelect, onClose, colors,
 }: {
-  visible: boolean; usedCards: string[];
+  visible: boolean; activeSlot: SlotKey | null; usedCards: string[];
   onSelect: (c: string) => void; onClose: () => void; colors: any;
 }) {
+  const label = activeSlot ? SLOT_LABEL[activeSlot] : "Select Card";
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.7)" }}>
@@ -460,19 +511,27 @@ function CardPickerModal({
           borderTopLeftRadius: 24, borderTopRightRadius: 24,
           padding: 16, paddingBottom: 36,
         }}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <Text style={{ color: colors.text.primary, fontSize: 16, fontWeight: "700" }}>Select Card</Text>
+          {/* Header */}
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+            <View style={{ gap: 4 }}>
+              <Text style={{ color: colors.text.primary, fontSize: 16, fontWeight: "700" }}>{label}</Text>
+              {activeSlot && <SlotProgress slot={activeSlot} />}
+            </View>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
               <MaterialCommunityIcons name="close" size={22} color={colors.text.secondary} />
             </TouchableOpacity>
           </View>
-          <View style={{ flexDirection: "row", marginBottom: 4, paddingLeft: 24 }}>
+
+          {/* Rank header row */}
+          <View style={{ flexDirection: "row", marginTop: 12, marginBottom: 4, paddingLeft: 24 }}>
             {RANKS.map(r => (
               <View key={r} style={{ flex: 1, alignItems: "center" }}>
                 <Text style={{ color: colors.text.tertiary, fontSize: 8, fontWeight: "600" }}>{r}</Text>
               </View>
             ))}
           </View>
+
+          {/* Card grid */}
           {SUITS.map(suit => (
             <View key={suit} style={{ flexDirection: "row", alignItems: "center", marginBottom: 5 }}>
               <Text style={{ width: 22, fontSize: 14, fontWeight: "700", color: isRed(suit) ? "#dc2626" : colors.text.primary }}>
@@ -507,12 +566,12 @@ function CardPickerModal({
 // ─── Action Timeline ──────────────────────────────────────────────────────────
 
 function ActionTimeline({
-  actions, onChange, colors, radius,
+  actions, onChange, colors, radius, stackMode,
 }: {
   actions: ActionItem[]; onChange: (items: ActionItem[]) => void;
-  colors: any; radius: any;
+  colors: any; radius: any; stackMode: StackMode;
 }) {
-  const needsAmount = (t: ActionType) => ["Raise","Bet","Call","All-in"].includes(t);
+  const needsAmount = (t: ActionType) => ["Raise","Bet","All-in"].includes(t);
 
   function update(id: string, patch: Partial<ActionItem>) {
     onChange(actions.map(a => a.id === id ? { ...a, ...patch } : a));
@@ -586,7 +645,7 @@ function ActionTimeline({
                     color: colors.text.primary, fontSize: 14,
                   }}
                 />
-                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>BB</Text>
+                <Text style={{ color: colors.text.secondary, fontSize: 13 }}>{stackMode}</Text>
               </View>
             )}
           </View>
@@ -676,6 +735,17 @@ export default function HandReviewScreen() {
   const [turnActions, setTurnActions] = useState<ActionItem[]>([newAction("Hero")]);
   const [riverActions, setRiverActions] = useState<ActionItem[]>([newAction("Hero")]);
 
+  // When hero position or player count changes, reset action timelines with the
+  // correct first actor (who acts first on each street per poker position order).
+  useEffect(() => {
+    const pf = heroActsFirst(heroPosition, "preflop", numPlayers) ? "Hero" : "Villain";
+    const po = heroActsFirst(heroPosition, "postflop", numPlayers) ? "Hero" : "Villain";
+    setPreflopActions([newAction(pf)]);
+    setFlopActions([newAction(po)]);
+    setTurnActions([newAction(po)]);
+    setRiverActions([newAction(po)]);
+  }, [heroPosition, numPlayers]);
+
   // ── UI state ──
   const [pickerVisible, setPickerVisible] = useState(false);
   const [activeSlot, setActiveSlot] = useState<SlotKey|null>(null);
@@ -701,7 +771,19 @@ export default function HandReviewScreen() {
     return pool[(heroIdx + idx) % pool.length];
   }
 
-  function openPicker(slot: SlotKey) { setActiveSlot(slot); setPickerVisible(true); }
+  function openPicker(slot: SlotKey) {
+    // For hole cards: if tapping hole2 but hole1 is empty, start from hole1
+    // For flop: start from first empty flop slot in the group
+    let start: SlotKey = slot;
+    if (slot === "hole2" && !holeCards[0]) start = "hole1";
+    if (slot === "flop2" && !flop[0]) start = "flop1";
+    if (slot === "flop3") {
+      if (!flop[0]) start = "flop1";
+      else if (!flop[1]) start = "flop2";
+    }
+    setActiveSlot(start);
+    setPickerVisible(true);
+  }
 
   function handleCardSelect(cardStr: string) {
     if (!activeSlot) return;
@@ -713,7 +795,14 @@ export default function HandReviewScreen() {
     else if (activeSlot === "flop3") setFlop([flop[0], flop[1], c]);
     else if (activeSlot === "turn")  setTurn(c);
     else if (activeSlot === "river") setRiver(c);
-    setPickerVisible(false); setActiveSlot(null);
+    // Auto-advance to next slot in the batch; close only at end of sequence
+    const next = SLOT_NEXT[activeSlot];
+    if (next) {
+      setActiveSlot(next);
+    } else {
+      setPickerVisible(false);
+      setActiveSlot(null);
+    }
   }
 
   function setVillainPos(seatIdx: number, pos: Position) {
@@ -727,10 +816,12 @@ export default function HandReviewScreen() {
   }
 
   function resetHand() {
+    const pf = heroActsFirst(heroPosition, "preflop", numPlayers) ? "Hero" : "Villain";
+    const po = heroActsFirst(heroPosition, "postflop", numPlayers) ? "Hero" : "Villain";
     setHoleCards([null,null]); setFlop([null,null,null]); setTurn(null); setRiver(null);
     setVillainOverrides({});
-    setPreflopActions([newAction("Hero")]); setFlopActions([newAction("Hero")]);
-    setTurnActions([newAction("Hero")]); setRiverActions([newAction("Hero")]);
+    setPreflopActions([newAction(pf)]); setFlopActions([newAction(po)]);
+    setTurnActions([newAction(po)]); setRiverActions([newAction(po)]);
     setResult(null); setError(null);
   }
 
@@ -853,14 +944,16 @@ export default function HandReviewScreen() {
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
               {POSITIONS.map(p => {
                 const available = (POSITIONS_BY_COUNT[numPlayers] ?? []).includes(p);
+                const takenByVillain = Object.values(villainOverrides).includes(p as Position);
+                const disabled = !available || takenByVillain;
                 return (
-                  <TouchableOpacity key={p} onPress={() => available && setHeroPosition(p)} disabled={!available}
+                  <TouchableOpacity key={p} onPress={() => !disabled && setHeroPosition(p)} disabled={disabled}
                     style={{
                       paddingHorizontal: 12, paddingVertical: 7, borderRadius: radius.full,
-                      backgroundColor: heroPosition === p ? colors.bg.brand : available ? colors.bg.tertiary : colors.bg.secondary,
+                      backgroundColor: heroPosition === p ? colors.bg.brand : disabled ? colors.bg.secondary : colors.bg.tertiary,
                       borderWidth: 1,
-                      borderColor: heroPosition === p ? colors.border.brand : available ? colors.border.default : colors.border.subtle,
-                      opacity: available ? 1 : 0.35,
+                      borderColor: heroPosition === p ? colors.border.brand : disabled ? colors.border.subtle : colors.border.default,
+                      opacity: disabled ? 0.35 : 1,
                     }}>
                     <Text style={{ fontSize: 12, fontWeight: "700", color: heroPosition === p ? colors.text.onBrand : colors.text.primary }}>{p}</Text>
                   </TouchableOpacity>
@@ -922,7 +1015,7 @@ export default function HandReviewScreen() {
         {/* Preflop */}
         <View style={{ backgroundColor: colors.bg.secondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border.default, padding: 16, marginBottom: 12 }}>
           <SLabel label="Preflop Actions" />
-          <ActionTimeline actions={preflopActions} onChange={setPreflopActions} colors={colors} radius={radius} />
+          <ActionTimeline actions={preflopActions} onChange={setPreflopActions} colors={colors} radius={radius} stackMode={stackMode} />
         </View>
 
         {/* Flop */}
@@ -934,7 +1027,7 @@ export default function HandReviewScreen() {
               <FormCardSlot card={flop[1]} onPress={() => openPicker("flop2")} colors={colors} />
               <FormCardSlot card={flop[2]} onPress={() => openPicker("flop3")} colors={colors} />
             </View>
-            {flopFilled && <ActionTimeline actions={flopActions} onChange={setFlopActions} colors={colors} radius={radius} />}
+            {flopFilled && <ActionTimeline actions={flopActions} onChange={setFlopActions} colors={colors} radius={radius} stackMode={stackMode} />}
           </View>
         )}
 
@@ -943,7 +1036,7 @@ export default function HandReviewScreen() {
           <View style={{ backgroundColor: colors.bg.secondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border.default, padding: 16, marginBottom: 12, gap: 12 }}>
             <SLabel label="Turn" />
             <FormCardSlot card={turn} onPress={() => openPicker("turn")} colors={colors} />
-            {turn && <ActionTimeline actions={turnActions} onChange={setTurnActions} colors={colors} radius={radius} />}
+            {turn && <ActionTimeline actions={turnActions} onChange={setTurnActions} colors={colors} radius={radius} stackMode={stackMode} />}
           </View>
         )}
 
@@ -952,7 +1045,7 @@ export default function HandReviewScreen() {
           <View style={{ backgroundColor: colors.bg.secondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border.default, padding: 16, marginBottom: 12, gap: 12 }}>
             <SLabel label="River" />
             <FormCardSlot card={river} onPress={() => openPicker("river")} colors={colors} />
-            {river && <ActionTimeline actions={riverActions} onChange={setRiverActions} colors={colors} radius={radius} />}
+            {river && <ActionTimeline actions={riverActions} onChange={setRiverActions} colors={colors} radius={radius} stackMode={stackMode} />}
           </View>
         )}
 
@@ -988,9 +1081,24 @@ export default function HandReviewScreen() {
         )}
       </ScrollView>
 
-      {/* Card picker */}
-      <CardPickerModal visible={pickerVisible} usedCards={allUsed} onSelect={handleCardSelect}
-        onClose={() => { setPickerVisible(false); setActiveSlot(null); }} colors={colors} />
+      {/* Card picker — usedCards excludes the slot being replaced so it can be swapped */}
+      <CardPickerModal
+        visible={pickerVisible}
+        activeSlot={activeSlot}
+        usedCards={allUsed.filter(c => {
+          if (activeSlot === "hole1") return c !== holeCards[0];
+          if (activeSlot === "hole2") return c !== holeCards[1];
+          if (activeSlot === "flop1") return c !== flop[0];
+          if (activeSlot === "flop2") return c !== flop[1];
+          if (activeSlot === "flop3") return c !== flop[2];
+          if (activeSlot === "turn")  return c !== turn;
+          if (activeSlot === "river") return c !== river;
+          return true;
+        })}
+        onSelect={handleCardSelect}
+        onClose={() => { setPickerVisible(false); setActiveSlot(null); }}
+        colors={colors}
+      />
 
       {/* Villain position picker */}
       {editingSeat !== null && (
@@ -1000,7 +1108,12 @@ export default function HandReviewScreen() {
           currentPos={villainOverrides[editingSeat] ?? null}
           autoPos={autoPositionForSeat(editingSeat)}
           heroPos={heroPosition}
-          takenPositions={[]}
+          takenPositions={[
+            heroPosition,
+            ...Object.entries(villainOverrides)
+              .filter(([i]) => parseInt(i) !== editingSeat)
+              .map(([, pos]) => pos as Position),
+          ]}
           onSelect={p => setVillainPos(editingSeat, p)}
           onReset={() => resetVillainPos(editingSeat)}
           onClose={() => setEditingSeat(null)}
