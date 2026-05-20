@@ -1,3 +1,5 @@
+import { PaywallModal } from "@/components/PaywallModal";
+import { useSubscription } from "@/context/SubscriptionContext";
 import { usePokerTheme } from "@/hooks/use-poker-theme";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
@@ -33,8 +35,10 @@ const INDICATOR_V_INSET = 5;
 
 export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const { colors, spacing } = usePokerTheme();
+  const { isPro } = useSubscription();
   const insets = useSafeAreaInsets();
   const [actionSheetVisible, setActionSheetVisible] = useState(false);
+  const [paywallVisible, setPaywallVisible] = useState(false);
   const [pillWidth, setPillWidth] = useState(0);
 
   const activeRouteName = state.routes[state.index]?.name ?? "";
@@ -85,7 +89,11 @@ export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
     outputRange: [0, tabWidth, tabWidth * 2, tabWidth * 3],
   });
 
-  const openLive = () => { setActionSheetVisible(false); router.push("/live"); };
+  const openLive = () => {
+    setActionSheetVisible(false);
+    if (!isPro) { setPaywallVisible(true); return; }
+    router.push("/live");
+  };
   const openAdd  = () => { setActionSheetVisible(false); router.push("/add"); };
 
   if (!showBar) return null;
@@ -275,6 +283,12 @@ export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         </Animated.View>
       </View>
 
+      <PaywallModal
+        visible={paywallVisible}
+        feature="liveSession"
+        onClose={() => setPaywallVisible(false)}
+      />
+
       {/* ── Action sheet modal ── */}
       <Modal
         visible={actionSheetVisible}
@@ -335,11 +349,17 @@ export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
                 paddingVertical: spacing.lg,
                 alignItems: "center",
                 marginBottom: spacing.sm,
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: 8,
               }}
             >
               <Text style={{ color: colors.text.onBrand, fontSize: 16, fontWeight: "700" }}>
                 Start Live Session
               </Text>
+              {!isPro && (
+                <MaterialCommunityIcons name="crown" size={16} color={colors.text.onBrand} style={{ opacity: 0.85 }} />
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               onPress={openAdd}

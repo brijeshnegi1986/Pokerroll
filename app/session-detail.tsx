@@ -1,4 +1,6 @@
 import { BACKEND_URL } from "@/constants/config";
+import { PaywallModal } from "@/components/PaywallModal";
+import { useSubscription } from "@/context/SubscriptionContext";
 import { usePokerTheme } from "@/hooks/use-poker-theme";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -24,10 +26,12 @@ export default function SessionDetailScreen() {
   const session = sessionParam ? JSON.parse(sessionParam as string) : null;
   const { colors, spacing, radius, typography } = usePokerTheme();
 
+  const { isPro } = useSubscription();
   const [notes, setNotes] = useState<string>(session?.notes ?? "");
   const [notesChanged, setNotesChanged] = useState(false);
   const [enhancing, setEnhancing] = useState(false);
   const [isEnhanced, setIsEnhanced] = useState(false);
+  const [paywallVisible, setPaywallVisible] = useState(false);
 
   if (!session) {
     router.back();
@@ -45,6 +49,15 @@ export default function SessionDetailScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setNotesChanged(false);
     Keyboard.dismiss();
+
+    if (!isPro) {
+      saveNoteEntry({
+        sessionId: session.id, sessionDate: session.date,
+        sessionVenue: session.venue ?? "", sessionProfit: session.profit ?? 0,
+        sessionType: session.type ?? "cash", rawNotes, enhancedNotes: null,
+      });
+      return;
+    }
 
     setEnhancing(true);
     setIsEnhanced(false);
@@ -239,13 +252,20 @@ export default function SessionDetailScreen() {
           }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
               <Text style={sectionLabel}>Notes</Text>
-              {isEnhanced && !enhancing && (
+              {!isPro && (
+                <TouchableOpacity onPress={() => setPaywallVisible(true)}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#7c3aed18", borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 2 }}>
+                  <MaterialCommunityIcons name="crown" size={10} color="#7c3aed" />
+                  <Text style={{ color: "#7c3aed", fontSize: 10, fontWeight: "700" }}>AI Enhancement · Pro</Text>
+                </TouchableOpacity>
+              )}
+              {isPro && isEnhanced && !enhancing && (
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#7c3aed18", borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 2 }}>
                   <MaterialCommunityIcons name="auto-fix" size={11} color="#7c3aed" />
                   <Text style={{ color: "#7c3aed", fontSize: 10, fontWeight: "700" }}>AI Enhanced</Text>
                 </View>
               )}
-              {enhancing && (
+              {isPro && enhancing && (
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                   <ActivityIndicator size="small" color="#7c3aed" />
                   <Text style={{ color: "#7c3aed", fontSize: 10, fontWeight: "600" }}>Enhancing…</Text>

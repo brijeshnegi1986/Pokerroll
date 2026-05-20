@@ -1,4 +1,5 @@
 import { AppThemeProvider, useThemeContext } from "@/store/ThemeContext";
+import { SubscriptionProvider } from "@/context/SubscriptionContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Theme, ThemeProvider } from "@react-navigation/native";
 import { router, Stack } from "expo-router";
@@ -100,7 +101,9 @@ function RootLayoutContent() {
 export default function RootLayout() {
   return (
     <AppThemeProvider>
-      <RootLayoutContent />
+      <SubscriptionProvider>
+        <RootLayoutContent />
+      </SubscriptionProvider>
     </AppThemeProvider>
   );
 }

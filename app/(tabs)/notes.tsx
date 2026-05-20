@@ -3,6 +3,8 @@ import {
   deleteNoteEntry, getNoteHistory, getSessions, NoteEntry,
   saveNoteEntry, Session, updateNoteEntry,
 } from "@/db/database";
+import { PaywallModal } from "@/components/PaywallModal";
+import { useSubscription } from "@/context/SubscriptionContext";
 import { usePokerTheme } from "@/hooks/use-poker-theme";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
@@ -434,6 +436,7 @@ export default function NotesScreen() {
   const { colors, radius } = usePokerTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const { isPro } = useSubscription();
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [editorVisible, setEditorVisible] = useState(false);
@@ -505,6 +508,26 @@ export default function NotesScreen() {
   }
 
   const TAB_BAR_H = (insets.bottom > 0 ? insets.bottom : 16) + 68;
+
+  if (!isPro) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg.primary, alignItems: "center", justifyContent: "center", padding: 32 }}>
+        <MaterialCommunityIcons name="notebook-outline" size={60} color={colors.text.tertiary} style={{ marginBottom: 16 }} />
+        <Text style={{ color: colors.text.primary, fontSize: 20, fontWeight: "800", textAlign: "center", marginBottom: 8 }}>
+          Notes is a Pro Feature
+        </Text>
+        <Text style={{ color: colors.text.secondary, fontSize: 14, textAlign: "center", lineHeight: 21, marginBottom: 28 }}>
+          Save, enhance with AI, and export session notes across all your games with a Pro subscription.
+        </Text>
+        <TouchableOpacity onPress={() => setEditorVisible(true)} activeOpacity={0.85}
+          style={{ backgroundColor: colors.bg.brand, borderRadius: 14, paddingVertical: 15, paddingHorizontal: 32, flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <MaterialCommunityIcons name="crown" size={18} color={colors.text.onBrand} />
+          <Text style={{ color: colors.text.onBrand, fontSize: 16, fontWeight: "800" }}>Upgrade to Pro</Text>
+        </TouchableOpacity>
+        <PaywallModal visible={editorVisible} feature="notesTab" onClose={() => setEditorVisible(false)} />
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg.primary }}>
