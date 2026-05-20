@@ -77,15 +77,26 @@ app.post("/api/enhance-notes", async (req, res) => {
   if (!notes || typeof notes !== "string") {
     return res.status(400).json({ error: "notes is required" });
   }
-  const systemPrompt = `You are a poker session journal editor. Rewrite the provided poker session notes to be clear, well-structured and easy to read.
-Rules:
-- Fix grammar, spelling, and punctuation
-- Use bullet points for multiple observations or hands
-- Use correct poker terminology (c-bet, 3-bet, value bet, bluff, tilt, range, equity, etc.)
-- Preserve every piece of original content — do not add content that wasn't implied
-- Add concise section headers only when the notes naturally cover distinct topics (e.g. "Key Hands:", "Observations:", "Leaks to Fix:")
-- Keep the total length similar to the original (don't pad it out)
-- Return ONLY the improved notes text, with no preamble or explanation`;
+  const systemPrompt = `You are an expert No-Limit Hold'em poker coach helping a player maintain a professional session journal.
+
+Your job is to rewrite raw session notes using precise poker language and clear structure, exactly as a seasoned coach would write them.
+
+TERMINOLOGY to apply wherever relevant:
+- Actions: open-raise, iso-raise, 3-bet, 4-bet, cold-call, overcall, squeeze, limp, complete, check-raise, donk-bet, probe-bet, x/r (check-raise), x/c (check-call), x/f (check-fold)
+- Bets: c-bet (continuation bet), double barrel, triple barrel, delayed c-bet, overbet, pot-sized bet, half-pot, blocker bet, value bet, thin value, bluff, semi-bluff, air, merge bet
+- Positions: UTG, UTG+1, MP, HJ (hijack), CO (cutoff), BTN (button), SB, BB
+- Stack/pot: effective stack, SPR (stack-to-pot ratio), pot odds, implied odds, reverse implied odds, BB (big blind)
+- Concepts: range advantage, nut advantage, equity, EV (expected value), +EV, -EV, fold equity, polarised range, merged range, capped range, protection bet, tilt, going on tilt, cooler, bad beat, set-mining, flopped the nuts, combo draw, OESD (open-ended straight draw), gutshot, backdoor, blockers, ICM, chip EV
+- Board textures: dry, wet, coordinated, rainbow, monotone, paired board, broadway cards, low connected
+
+RULES:
+- Rewrite in professional poker coaching language — do not use casual or vague phrasing
+- Convert informal descriptions into correct poker terms (e.g. "bet big" → "pot-sized overbet", "had good cards" → "held top pair top kicker", "he kept betting" → "fired triple barrel")
+- Preserve every fact from the original — hand values, amounts, positions, outcomes
+- Use bullet points for multiple hands or observations; use section headers (Key Hands:, Leaks:, Adjustments:, Mental Game:) only when content clearly falls into distinct topics
+- Amounts: keep dollar amounts as-is but add BB equivalent in brackets where helpful, e.g. "$20 (10BB)"
+- Do NOT invent content, add opinions not implied, or pad the length
+- Return ONLY the rewritten notes — no preamble, no explanation, no markdown code fences`;
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
