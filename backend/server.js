@@ -69,73 +69,6 @@ Only include streets that were actually played. Grades: A = excellent, B = good,
   }
 });
 
-app.post("/api/enhance-notes", async (req, res) => {
-  if (!ANTHROPIC_API_KEY) {
-    return res.status(500).json({ error: "ANTHROPIC_API_KEY is not configured on the server." });
-  }
-  const { notes, sessionContext } = req.body;
-  if (!notes || typeof notes !== "string") {
-    return res.status(400).json({ error: "notes is required" });
-  }
-  const systemPrompt = `You are an expert No-Limit Hold'em poker coach helping a player maintain a professional session journal.
-
-Your job is to rewrite raw session notes using precise poker language and clear structure, exactly as a seasoned coach would write them. If the notes describe a specific hand, also include a brief hand analysis section.
-
-TERMINOLOGY to apply wherever relevant:
-- Actions: open-raise, iso-raise, 3-bet, 4-bet, cold-call, overcall, squeeze, limp, complete, check-raise, donk-bet, probe-bet, x/r (check-raise), x/c (check-call), x/f (check-fold)
-- Bets: c-bet (continuation bet), double barrel, triple barrel, delayed c-bet, overbet, pot-sized bet, half-pot, blocker bet, value bet, thin value, bluff, semi-bluff, air, merge bet
-- Positions: UTG, UTG+1, MP, HJ (hijack), CO (cutoff), BTN (button), SB, BB
-- Stack/pot: effective stack, SPR (stack-to-pot ratio), pot odds, implied odds, reverse implied odds, BB (big blind)
-- Concepts: range advantage, nut advantage, equity, EV (expected value), +EV, -EV, fold equity, polarised range, merged range, capped range, protection bet, tilt, going on tilt, cooler, bad beat, set-mining, flopped the nuts, combo draw, OESD (open-ended straight draw), gutshot, backdoor, blockers, ICM, chip EV
-- Board textures: dry, wet, coordinated, rainbow, monotone, paired board, broadway cards, low connected
-- Cards: use shorthand notation (Ah=Ace of hearts, Kd=King of diamonds, Ts=Ten of spades, 2c=Two of clubs)
-
-RULES:
-- Rewrite in professional poker coaching language — do not use casual or vague phrasing
-- Convert informal descriptions into correct poker terms (e.g. "bet big" → "pot-sized overbet", "had good cards" → "held top pair top kicker", "he kept betting" → "fired triple barrel")
-- Always use card shorthand notation: Ah Kd Qs Jc Tc 9h etc.
-- Preserve every fact from the original — hand values, amounts, positions, outcomes
-- Amounts: keep dollar amounts as-is but add BB equivalent in brackets where helpful, e.g. "$20 (10BB)"
-- Use bullet points for multiple hands or observations; use section headers (Key Hands:, Leaks:, Adjustments:, Mental Game:) only when content clearly falls into distinct topics
-- If the notes describe a specific hand, add a "Hand Analysis:" section at the end with:
-  • Result: [Won/Lost] — the outcome
-  • Decision Quality: [Excellent/Good/Marginal/Mistake] — overall assessment
-  • Key Decision: the most important decision point in the hand
-  • Reasoning: why that decision was correct or incorrect based on poker theory
-  • Improvement: one specific thing to do differently next time (if applicable)
-- Do NOT invent content, add opinions not implied, or pad the length
-- Return ONLY the rewritten notes — no preamble, no explanation, no markdown code fences`;
-
-  try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages: [{ role: "user", content: `Session: ${sessionContext || "N/A"}\n\nNotes to improve:\n${notes}` }],
-      }),
-    });
-    if (!response.ok) {
-      const errText = await response.text();
-      let errMsg = `Anthropic API error ${response.status}`;
-      try { errMsg = JSON.parse(errText)?.error?.message ?? errMsg; } catch (_) {}
-      return res.status(response.status).json({ error: errMsg });
-    }
-    const data = await response.json();
-    const enhanced = data.content?.[0]?.text ?? notes;
-    res.json({ enhanced });
-  } catch (err) {
-    console.error("enhance-notes error:", err.message);
-    res.status(500).json({ error: "Internal server error: " + err.message });
-  }
-});
-
 app.post("/api/compress-hand", async (req, res) => {
   if (!ANTHROPIC_API_KEY) {
     return res.status(500).json({ error: "ANTHROPIC_API_KEY is not configured on the server." });
@@ -145,21 +78,27 @@ app.post("/api/compress-hand", async (req, res) => {
     return res.status(400).json({ error: "notes is required" });
   }
 
-  const systemPrompt = `You are a poker hand compression assistant. Convert the player's hand description into compact poker shorthand — the kind experienced players jot in a notebook. Be extremely concise.
+  const systemPrompt = `You are a poker hand compression assistant. Convert the player's hand description into compact, readable poker notation. Be concise but use clear labels so anyone can read it at a glance.
 
 NOTATION RULES:
 - Positions: UTG / UTG+1 / MP / HJ / CO / BTN / SB / BB
 - Hands: AKo (offsuit), AKs (suited), TT (pairs), T = Ten
-- Actions: r (raise), c (call), x (check), f (fold), 3b (3-bet), 4b (4-bet), ai (all-in), cb (c-bet), xr (check-raise)
-- Sizing: use $ or BB, e.g. "r$15", "cb 40%"
-- Board cards: use shorthand Ah Kd Ts 2c — then note texture (r=rainbow, ss/dd=two-suited, mono=monotone)
-- Format each street on its own short line: Preflop / Flop / Turn / River / Result
-- End with a one-line result: "Won $X" or "Lost $X"
+- Actions — always write the full word followed by a colon and the amount, no extra spaces:
+  "Raise: $X", "Call: $X", "Check", "Fold", "All-in: $X"
+  "3-bet: $X", "4-bet: $X", "C-bet: $X", "Check-raise: $X"
+- Board cards: use shorthand Ah Kd Ts 2c — note texture in brackets e.g. (rainbow) (two-suited) (monotone)
+- Format each street on its own line with a label:
+  Preflop: ...
+  Flop (Xh Yd Zc): ...
+  Turn (Xh): ...
+  River (Xh): ...
+  Result: Won $X / Lost $X
+- Stack and pot sizes: use $ amounts
 
 RULES:
-- Compress aggressively — every word must earn its place
+- Every action must be readable without a legend — no single-letter codes
 - Preserve all key facts: positions, hand, board, bet sizes, outcome
-- If the input is already in shorthand or is not a hand description, return it unchanged
+- If the input is already in this format or is not a hand description, return it unchanged
 - Return ONLY the compressed hand — no explanation, no preamble`;
 
   try {

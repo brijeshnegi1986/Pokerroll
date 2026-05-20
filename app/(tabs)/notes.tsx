@@ -75,7 +75,6 @@ function NoteEditorModal({
   );
   const [sessionId, setSessionId] = useState<number>(initial?.session_id ?? 0);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [enhancing, setEnhancing] = useState(false);
   const [compressing, setCompressing] = useState(false);
   const [compressedPreview, setCompressedPreview] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
@@ -101,29 +100,6 @@ function NoteEditorModal({
     } catch {
       Alert.alert("No connection", "AI compression needs an internet connection. Try again when back online.");
     } finally { setCompressing(false); }
-  }
-
-  async function handleEnhance() {
-    if (!body.trim()) return;
-    setEnhancing(true);
-    try {
-      const ctx = selectedSession
-        ? `${selectedSession.type === "tournament" ? "Tournament" : "Cash Game"} · ${selectedSession.venue || ""} · ${selectedSession.date} · Profit: $${selectedSession.profit}`
-        : "Standalone note";
-      const res = await fetch(`${BACKEND_URL}/api/enhance-notes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: body, sessionContext: ctx }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.enhanced) setBody(data.enhanced);
-      } else {
-        Alert.alert("Enhancement failed", "Couldn't improve notes right now. Try again later.");
-      }
-    } catch {
-      Alert.alert("No connection", "AI enhancement needs an internet connection. Try again when back online.");
-    } finally { setEnhancing(false); }
   }
 
   function handleSave() {
@@ -292,37 +268,6 @@ function NoteEditorModal({
               }}
             />
           </View>
-
-          {/* Enhance with AI */}
-          {isPro ? (
-            <TouchableOpacity
-              onPress={handleEnhance}
-              disabled={enhancing || !body.trim()}
-              activeOpacity={0.8}
-              style={{
-                flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-                backgroundColor: "#7c3aed", borderRadius: 12, paddingVertical: 14,
-                opacity: !body.trim() ? 0.4 : 1,
-              }}
-            >
-              {enhancing
-                ? <ActivityIndicator color="#fff" size="small" />
-                : <MaterialCommunityIcons name="auto-fix" size={18} color="#fff" />
-              }
-              <Text style={{ color: "#fff", fontSize: 15, fontWeight: "700" }}>
-                {enhancing ? "Enhancing…" : "Enhance with AI"}
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={{
-              flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-              backgroundColor: "#7c3aed22", borderRadius: 12, paddingVertical: 14,
-              borderWidth: 1, borderColor: "#7c3aed44",
-            }}>
-              <MaterialCommunityIcons name="crown" size={16} color="#7c3aed" />
-              <Text style={{ color: "#7c3aed", fontSize: 14, fontWeight: "700" }}>AI Enhancement · Pro only</Text>
-            </View>
-          )}
 
           {/* Compress to Shorthand */}
           {isPro ? (

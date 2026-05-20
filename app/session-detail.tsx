@@ -1,4 +1,3 @@
-import { BACKEND_URL } from "@/constants/config";
 import { PaywallModal } from "@/components/PaywallModal";
 import { HandAnalysisModal } from "@/components/HandAnalysisModal";
 import { CardText } from "@/components/CardText";
@@ -10,7 +9,6 @@ import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Keyboard,
   KeyboardAvoidingView,
@@ -33,8 +31,6 @@ export default function SessionDetailScreen() {
   const trial = getTrialStatus();
   const [notes, setNotes] = useState<string>(session?.notes ?? "");
   const [notesChanged, setNotesChanged] = useState(false);
-  const [enhancing, setEnhancing] = useState(false);
-  const [isEnhanced, setIsEnhanced] = useState(false);
   const [paywallVisible, setPaywallVisible] = useState(false);
   const [handReviewVisible, setHandReviewVisible] = useState(false);
 
@@ -48,58 +44,17 @@ export default function SessionDetailScreen() {
   const profitColor = profit >= 0 ? colors.text.success : colors.text.danger;
   const cardBorderColor = profit >= 0 ? colors.border.success : colors.border.danger;
 
-  const handleSaveNotes = async () => {
+  const handleSaveNotes = () => {
     const rawNotes = notes;
     saveNotes(session.id, rawNotes);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setNotesChanged(false);
     Keyboard.dismiss();
-
-    if (!isPro) {
+    try {
       saveNoteEntry({
         sessionId: session.id, sessionDate: session.date,
         sessionVenue: session.venue ?? "", sessionProfit: session.profit ?? 0,
         sessionType: session.type ?? "cash", rawNotes, enhancedNotes: null,
-      });
-      return;
-    }
-
-    setEnhancing(true);
-    setIsEnhanced(false);
-    let enhancedNotes: string | null = null;
-    try {
-      const sessionContext = `${session.type === "tournament" ? "Tournament" : "Cash Game"} · ${session.venue || "Unknown venue"} · ${session.date} · Profit: $${session.profit}`;
-      const res = await fetch(`${BACKEND_URL}/api/enhance-notes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: rawNotes, sessionContext }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        enhancedNotes = data.enhanced ?? null;
-        if (enhancedNotes) {
-          setNotes(enhancedNotes);
-          saveNotes(session.id, enhancedNotes);
-          setIsEnhanced(true);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }
-      } else {
-        Alert.alert("Enhancement failed", "Notes saved but AI enhancement couldn't run. Try again later.");
-      }
-    } catch (e: any) {
-      Alert.alert("No connection", "Notes saved locally. AI enhancement needs an internet connection — try again when back online.");
-    } finally {
-      setEnhancing(false);
-    }
-    try {
-      saveNoteEntry({
-        sessionId: session.id,
-        sessionDate: session.date,
-        sessionVenue: session.venue ?? "",
-        sessionProfit: session.profit ?? 0,
-        sessionType: session.type ?? "cash",
-        rawNotes,
-        enhancedNotes,
       });
     } catch {}
   };
@@ -255,29 +210,8 @@ export default function SessionDetailScreen() {
             justifyContent: "space-between",
             marginBottom: spacing.sm,
           }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
-              <Text style={sectionLabel}>Notes</Text>
-              {!isPro && (
-                <TouchableOpacity onPress={() => setPaywallVisible(true)}
-                  style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#7c3aed18", borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 2 }}>
-                  <MaterialCommunityIcons name="crown" size={10} color="#7c3aed" />
-                  <Text style={{ color: "#7c3aed", fontSize: 10, fontWeight: "700" }}>AI Enhancement · Pro</Text>
-                </TouchableOpacity>
-              )}
-              {isPro && isEnhanced && !enhancing && (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#7c3aed18", borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 2 }}>
-                  <MaterialCommunityIcons name="auto-fix" size={11} color="#7c3aed" />
-                  <Text style={{ color: "#7c3aed", fontSize: 10, fontWeight: "700" }}>AI Enhanced</Text>
-                </View>
-              )}
-              {isPro && enhancing && (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                  <ActivityIndicator size="small" color="#7c3aed" />
-                  <Text style={{ color: "#7c3aed", fontSize: 10, fontWeight: "600" }}>Enhancing…</Text>
-                </View>
-              )}
-            </View>
-            {notesChanged && !enhancing && (
+            <Text style={sectionLabel}>Notes</Text>
+            {notesChanged && (
               <TouchableOpacity
                 onPress={handleSaveNotes}
                 style={{
@@ -297,7 +231,7 @@ export default function SessionDetailScreen() {
             backgroundColor: colors.bg.secondary,
             borderRadius: radius.lg,
             borderWidth: 1,
-            borderColor: enhancing ? "#7c3aed" : notesChanged ? colors.border.brand : colors.border.default,
+            borderColor: notesChanged ? colors.border.brand : colors.border.default,
             padding: spacing.lg,
             minHeight: 100,
           }}>
@@ -306,15 +240,13 @@ export default function SessionDetailScreen() {
               placeholder="Add notes about this session..."
               placeholderTextColor={colors.text.disabled}
               value={notes}
-              onChangeText={(t) => { setNotes(t); setNotesChanged(true); setIsEnhanced(false); }}
-              editable={!enhancing}
+              onChangeText={(t) => { setNotes(t); setNotesChanged(true); }}
               style={{
                 color: colors.text.primary,
                 ...typography.bodySm,
                 lineHeight: 22,
                 minHeight: 80,
                 textAlignVertical: "top",
-                opacity: enhancing ? 0.5 : 1,
               }}
             />
           </View>
