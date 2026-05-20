@@ -568,6 +568,7 @@ export default function NotesScreen() {
 
       {/* Editor modal */}
       <NoteEditorModal
+        key={editTarget?.id ?? "new"}
         visible={editorVisible}
         initial={editTarget}
         sessions={sessions}
