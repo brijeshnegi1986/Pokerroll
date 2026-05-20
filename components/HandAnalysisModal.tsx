@@ -1,5 +1,6 @@
 import { BACKEND_URL } from "@/constants/config";
 import { CardText } from "@/components/CardText";
+import { updateNoteEntry } from "@/db/database";
 import { usePokerTheme } from "@/hooks/use-poker-theme";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useState } from "react";
@@ -124,10 +125,13 @@ function StreetCard({ street, data, colors, radius }: {
 interface Props {
   visible: boolean;
   notes: string;
+  noteId?: number;        // if provided, analysis is saved to this note
+  savedAnalysis?: string | null;  // pre-loaded JSON from DB
   onClose: () => void;
+  onSaved?: () => void;   // called after analysis is saved
 }
 
-export function HandAnalysisModal({ visible, notes, onClose }: Props) {
+export function HandAnalysisModal({ visible, notes, noteId, savedAnalysis, onClose, onSaved }: Props) {
   const { colors, radius } = usePokerTheme();
   const insets = useSafeAreaInsets();
   const [loading, setLoading]     = useState(false);
@@ -163,6 +167,12 @@ export function HandAnalysisModal({ visible, notes, onClose }: Props) {
 
       const parsed: HandAnalysis = JSON.parse(jsonMatch[0]);
       setAnalysis(parsed);
+
+      // Save to DB if this analysis belongs to a note
+      if (noteId) {
+        updateNoteEntry(noteId, { handAnalysis: JSON.stringify(parsed) });
+        onSaved?.();
+      }
     } catch (e: any) {
       console.error("Hand analysis error:", e?.message ?? e);
       setError(
@@ -176,6 +186,15 @@ export function HandAnalysisModal({ visible, notes, onClose }: Props) {
   }
 
   function handleOpen() {
+    // Load saved analysis if available, otherwise analyze fresh
+    if (savedAnalysis) {
+      try {
+        setAnalysis(JSON.parse(savedAnalysis));
+        setError(null);
+        setLoading(false);
+        return;
+      } catch { /* fall through to fresh analysis */ }
+    }
     setAnalysis(null);
     setError(null);
     analyze();

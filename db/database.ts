@@ -49,6 +49,7 @@ export const initDB = () => {
   `);
   try { db.execSync(`ALTER TABLE notes_history ADD COLUMN title TEXT DEFAULT ''`); } catch (_) {}
   try { db.execSync(`ALTER TABLE notes_history ADD COLUMN updated_at INTEGER DEFAULT 0`); } catch (_) {}
+  try { db.execSync(`ALTER TABLE notes_history ADD COLUMN hand_analysis TEXT`); } catch (_) {}
 
   // Settings key-value store
   db.execSync(`
@@ -374,6 +375,7 @@ export type NoteEntry = {
   title: string | null;
   created_at: number;
   updated_at: number;
+  hand_analysis: string | null;  // JSON string of HandAnalysis
 };
 
 export const saveNoteEntry = (data: {
@@ -400,6 +402,7 @@ export const updateNoteEntry = (id: number, data: {
   title?: string;
   rawNotes?: string;
   enhancedNotes?: string | null;
+  handAnalysis?: string | null;
 }): void => {
   const now = Date.now();
   db.runSync(
@@ -407,10 +410,19 @@ export const updateNoteEntry = (id: number, data: {
      SET title = COALESCE(?, title),
          raw_notes = COALESCE(?, raw_notes),
          enhanced_notes = COALESCE(?, enhanced_notes),
+         hand_analysis = COALESCE(?, hand_analysis),
          updated_at = ?
      WHERE id = ?`,
-    [data.title ?? null, data.rawNotes ?? null, data.enhancedNotes ?? null, now, id]
+    [data.title ?? null, data.rawNotes ?? null, data.enhancedNotes ?? null,
+     data.handAnalysis ?? null, now, id]
   );
+};
+
+export const getTotalSessionCount = (): number => {
+  const row = db.getFirstSync(
+    `SELECT COUNT(*) as count FROM sessions WHERE ${COMPLETED}`
+  ) as { count: number } | null;
+  return row?.count ?? 0;
 };
 
 export const getNoteHistory = (): NoteEntry[] =>

@@ -3,6 +3,7 @@ import { PaywallModal } from "@/components/PaywallModal";
 import { HandAnalysisModal } from "@/components/HandAnalysisModal";
 import { CardText } from "@/components/CardText";
 import { useSubscription } from "@/context/SubscriptionContext";
+import { getTrialStatus, markTrialStarted } from "@/hooks/use-trial";
 import { usePokerTheme } from "@/hooks/use-poker-theme";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -29,6 +30,7 @@ export default function SessionDetailScreen() {
   const { colors, spacing, radius, typography } = usePokerTheme();
 
   const { isPro } = useSubscription();
+  const trial = getTrialStatus();
   const [notes, setNotes] = useState<string>(session?.notes ?? "");
   const [notesChanged, setNotesChanged] = useState(false);
   const [enhancing, setEnhancing] = useState(false);
@@ -317,28 +319,55 @@ export default function SessionDetailScreen() {
             />
           </View>
 
-          {/* Review Hand button — shown when notes have content and user is Pro */}
-          {isPro && notes.trim().length > 20 && !notesChanged && (
+          {/* Review Hand button — always shown when notes are long enough */}
+          {notes.trim().length > 20 && !notesChanged && (
             <TouchableOpacity
-              onPress={() => setHandReviewVisible(true)}
+              onPress={() => {
+                if (!isPro && !trial.allowed) { setPaywallVisible(true); return; }
+                markTrialStarted();
+                setHandReviewVisible(true);
+              }}
               activeOpacity={0.85}
               style={{
                 flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
                 marginTop: spacing.md,
                 borderRadius: radius.md,
                 borderWidth: 1,
-                borderColor: colors.border.brand,
+                borderColor: !isPro && !trial.allowed ? colors.border.default : colors.border.brand,
                 paddingVertical: spacing.md,
-                backgroundColor: colors.bg.brand + "10",
+                backgroundColor: !isPro && !trial.allowed ? colors.bg.tertiary : colors.bg.brand + "10",
               }}
             >
-              <MaterialCommunityIcons name="cards-playing-outline" size={16} color={colors.text.brand} />
-              <Text style={{ color: colors.text.brand, fontSize: 14, fontWeight: "700" }}>
+              <MaterialCommunityIcons
+                name={!isPro && !trial.allowed ? "lock-outline" : "cards-playing-outline"}
+                size={16}
+                color={!isPro && !trial.allowed ? colors.text.tertiary : colors.text.brand}
+              />
+              <Text style={{
+                color: !isPro && !trial.allowed ? colors.text.tertiary : colors.text.brand,
+                fontSize: 14, fontWeight: "700",
+              }}>
                 Review Hand with AI
               </Text>
+              {!isPro && trial.allowed && !trial.trialStarted && (
+                <View style={{ backgroundColor: "#38a16922", borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}>
+                  <Text style={{ color: "#38a169", fontSize: 11, fontWeight: "700" }}>7-day free trial</Text>
+                </View>
+              )}
+              {!isPro && trial.allowed && trial.trialStarted && (
+                <View style={{ backgroundColor: "#38a16922", borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}>
+                  <Text style={{ color: "#38a169", fontSize: 11, fontWeight: "700" }}>{trial.daysLeft}d left</Text>
+                </View>
+              )}
+              {!isPro && !trial.allowed && (
+                <View style={{ backgroundColor: "#e53e3e18", borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}>
+                  <Text style={{ color: "#e53e3e", fontSize: 11, fontWeight: "700" }}>Trial ended · Upgrade</Text>
+                </View>
+              )}
             </TouchableOpacity>
           )}
 
+          <PaywallModal visible={paywallVisible} feature="aiNotes" onClose={() => setPaywallVisible(false)} />
           <HandAnalysisModal
             visible={handReviewVisible}
             notes={notes}

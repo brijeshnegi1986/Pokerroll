@@ -1,5 +1,4 @@
 // ─── RevenueCat API Keys ──────────────────────────────────────────────────────
-// Paste your keys from app.revenuecat.com → Project → API Keys
 export const RC_API_KEY_IOS     = "test_DUdlpssbkNVofURDZsmjPnGQBdC";
 export const RC_API_KEY_ANDROID = "test_DUdlpssbkNVofURDZsmjPnGQBdC";
 
@@ -13,16 +12,21 @@ export const PRODUCT_LIFETIME  = "lifetime";
 export const ENTITLEMENT_PRO = "PokerRoll Pro";
 
 // ─── Feature gates ───────────────────────────────────────────────────────────
-// Anything NOT listed here is free for everyone.
 export const PRO_FEATURES = {
-  unlimitedHistory: "Full session history (free = last 10)",
-  liveSession:      "Live session tracker",
-  aiNotes:          "AI note enhancement",
-  notesTab:         "Notes history, export & copy",
+  unlimitedSessions: "Unlimited session records (free = 30)",
+  unlimitedNotes:    "Unlimited notes (free = 10)",
+  aiHandReview:      "AI hand review",
+  aiEnhancement:     "AI note enhance & compress",
 } as const;
 
 export type ProFeature = keyof typeof PRO_FEATURES;
 
-export const FREE_CASH_LIMIT = 20;
-export const FREE_TOURNAMENT_LIMIT = 5;
-export const FREE_NOTES_LIMIT = 10;
+// ─── Free tier limits ─────────────────────────────────────────────────────────
+// Sessions: combined cash + tournament total
+export const FREE_SESSION_LIMIT = 30;
+// Standalone notes
+export const FREE_NOTES_LIMIT   = 10;
+
+// ─── Trial ────────────────────────────────────────────────────────────────────
+// All features (including AI) available for this many days from first open
+export const TRIAL_DAYS = 7;

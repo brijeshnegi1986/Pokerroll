@@ -136,6 +136,62 @@ RULES:
   }
 });
 
+app.post("/api/compress-hand", async (req, res) => {
+  if (!ANTHROPIC_API_KEY) {
+    return res.status(500).json({ error: "ANTHROPIC_API_KEY is not configured on the server." });
+  }
+  const { notes } = req.body;
+  if (!notes || typeof notes !== "string") {
+    return res.status(400).json({ error: "notes is required" });
+  }
+
+  const systemPrompt = `You are a poker hand compression assistant. Convert the player's hand description into compact poker shorthand — the kind experienced players jot in a notebook. Be extremely concise.
+
+NOTATION RULES:
+- Positions: UTG / UTG+1 / MP / HJ / CO / BTN / SB / BB
+- Hands: AKo (offsuit), AKs (suited), TT (pairs), T = Ten
+- Actions: r (raise), c (call), x (check), f (fold), 3b (3-bet), 4b (4-bet), ai (all-in), cb (c-bet), xr (check-raise)
+- Sizing: use $ or BB, e.g. "r$15", "cb 40%"
+- Board cards: use shorthand Ah Kd Ts 2c — then note texture (r=rainbow, ss/dd=two-suited, mono=monotone)
+- Format each street on its own short line: Preflop / Flop / Turn / River / Result
+- End with a one-line result: "Won $X" or "Lost $X"
+
+RULES:
+- Compress aggressively — every word must earn its place
+- Preserve all key facts: positions, hand, board, bet sizes, outcome
+- If the input is already in shorthand or is not a hand description, return it unchanged
+- Return ONLY the compressed hand — no explanation, no preamble`;
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 512,
+        system: systemPrompt,
+        messages: [{ role: "user", content: notes }],
+      }),
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      let errMsg = `Anthropic API error ${response.status}`;
+      try { errMsg = JSON.parse(errText)?.error?.message ?? errMsg; } catch (_) {}
+      return res.status(response.status).json({ error: errMsg });
+    }
+    const data = await response.json();
+    const compressed = data.content?.[0]?.text ?? notes;
+    res.json({ compressed });
+  } catch (err) {
+    console.error("compress-hand error:", err.message);
+    res.status(500).json({ error: "Internal server error: " + err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`PokerTracker AI proxy running on port ${PORT}`);
   console.log(`API key set: ${!!ANTHROPIC_API_KEY}`);

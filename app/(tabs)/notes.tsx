@@ -8,10 +8,11 @@ import { HandAnalysisModal } from "@/components/HandAnalysisModal";
 import { CardText } from "@/components/CardText";
 import { useSubscription } from "@/context/SubscriptionContext";
 import { FREE_NOTES_LIMIT } from "@/constants/subscription";
+import { getTrialStatus, markTrialStarted } from "@/hooks/use-trial";
 import { usePokerTheme } from "@/hooks/use-poker-theme";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { useFocusEffect, useNavigation } from "expo-router";
 import { useCallback, useLayoutEffect, useState } from "react";
@@ -56,7 +57,7 @@ function buildExportText(entry: NoteEntry): string {
 // ─── Add / Edit Modal ─────────────────────────────────────────────────────────
 
 function NoteEditorModal({
-  visible, initial, sessions, onClose, onSaved, colors, radius, isPro,
+  visible, initial, sessions, onClose, onSaved, colors, isPro,
 }: {
   visible: boolean;
   initial: NoteEntry | null;
@@ -64,7 +65,6 @@ function NoteEditorModal({
   onClose: () => void;
   onSaved: () => void;
   colors: any;
-  radius: any;
   isPro: boolean;
 }) {
   const isEdit = !!initial;
@@ -76,9 +76,32 @@ function NoteEditorModal({
   const [sessionId, setSessionId] = useState<number>(initial?.session_id ?? 0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [enhancing, setEnhancing] = useState(false);
+  const [compressing, setCompressing] = useState(false);
+  const [compressedPreview, setCompressedPreview] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
 
   const selectedSession = sessions.find(s => s.id === sessionId) ?? null;
+
+  async function handleCompress() {
+    if (!body.trim()) return;
+    setCompressing(true);
+    setCompressedPreview(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/compress-hand`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: body }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.compressed) setCompressedPreview(data.compressed);
+      } else {
+        Alert.alert("Compression failed", "Couldn't compress notes right now. Try again later.");
+      }
+    } catch {
+      Alert.alert("No connection", "AI compression needs an internet connection. Try again when back online.");
+    } finally { setCompressing(false); }
+  }
 
   async function handleEnhance() {
     if (!body.trim()) return;
@@ -300,6 +323,76 @@ function NoteEditorModal({
               <Text style={{ color: "#7c3aed", fontSize: 14, fontWeight: "700" }}>AI Enhancement · Pro only</Text>
             </View>
           )}
+
+          {/* Compress to Shorthand */}
+          {isPro ? (
+            <TouchableOpacity
+              onPress={handleCompress}
+              disabled={compressing || !body.trim()}
+              activeOpacity={0.8}
+              style={{
+                flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+                backgroundColor: "#0d9488", borderRadius: 12, paddingVertical: 14,
+                opacity: !body.trim() ? 0.4 : 1,
+              }}
+            >
+              {compressing
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <MaterialCommunityIcons name="text-short" size={18} color="#fff" />
+              }
+              <Text style={{ color: "#fff", fontSize: 15, fontWeight: "700" }}>
+                {compressing ? "Compressing…" : "Compress to Shorthand"}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={{
+              flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+              backgroundColor: "#0d948822", borderRadius: 12, paddingVertical: 14,
+              borderWidth: 1, borderColor: "#0d948844",
+            }}>
+              <MaterialCommunityIcons name="crown" size={16} color="#0d9488" />
+              <Text style={{ color: "#0d9488", fontSize: 14, fontWeight: "700" }}>Compress to Shorthand · Pro only</Text>
+            </View>
+          )}
+
+          {/* Compressed preview */}
+          {compressedPreview && (
+            <View style={{
+              backgroundColor: "#0d948814", borderRadius: 12,
+              borderWidth: 1, borderColor: "#0d948844", padding: 14, gap: 12,
+            }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <MaterialCommunityIcons name="check-circle-outline" size={16} color="#0d9488" />
+                <Text style={{ color: "#0d9488", fontSize: 13, fontWeight: "700" }}>Compressed Version</Text>
+              </View>
+              <Text style={{ color: "#fff", fontSize: 13, lineHeight: 21, fontFamily: "monospace" }}>
+                {compressedPreview}
+              </Text>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => { setBody(compressedPreview); setCompressedPreview(null); }}
+                  style={{
+                    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+                    backgroundColor: "#0d9488", borderRadius: 10, paddingVertical: 11,
+                  }}
+                >
+                  <MaterialCommunityIcons name="check" size={16} color="#fff" />
+                  <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700" }}>Use This</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setCompressedPreview(null)}
+                  style={{
+                    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+                    backgroundColor: "#ffffff14", borderRadius: 10, paddingVertical: 11,
+                    borderWidth: 1, borderColor: "#ffffff22",
+                  }}
+                >
+                  <MaterialCommunityIcons name="close" size={16} color="#aaa" />
+                  <Text style={{ color: "#aaa", fontSize: 14, fontWeight: "700" }}>Keep Original</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </Modal>
@@ -309,7 +402,7 @@ function NoteEditorModal({
 // ─── Note Card ────────────────────────────────────────────────────────────────
 
 function NoteCard({
-  entry, onEdit, onDelete, onCopy, onExport, onReviewHand, colors, radius,
+  entry, onEdit, onDelete, onCopy, onExport, onReviewHand, reviewHandBadge, colors, radius,
 }: {
   entry: NoteEntry;
   onEdit: () => void;
@@ -317,6 +410,7 @@ function NoteCard({
   onCopy: () => void;
   onExport: () => void;
   onReviewHand: () => void;
+  reviewHandBadge: string | null;
   colors: any;
   radius: any;
 }) {
@@ -324,7 +418,8 @@ function NoteCard({
   const profit = entry.session_profit ?? 0;
   const profitColor = profit >= 0 ? colors.text.success : colors.text.danger;
   const isStandalone = entry.session_type === "standalone" || entry.session_id === 0;
-  const isEnhanced = !!entry.enhanced_notes && entry.enhanced_notes !== entry.raw_notes;
+  const isEnhanced   = !!entry.enhanced_notes && entry.enhanced_notes !== entry.raw_notes;
+  const isReviewed   = !!entry.hand_analysis;
   const displayText = noteDisplayText(entry);
 
   return (
@@ -375,6 +470,12 @@ function NoteCard({
                 <Text style={{ color: "#7c3aed", fontSize: 10, fontWeight: "700" }}>AI Enhanced</Text>
               </View>
             )}
+            {isReviewed && (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#e53e3e18", borderRadius: radius.full, paddingHorizontal: 6, paddingVertical: 2 }}>
+                <MaterialCommunityIcons name="cards-playing-outline" size={10} color="#e53e3e" />
+                <Text style={{ color: "#e53e3e", fontSize: 10, fontWeight: "700" }}>Hand Reviewed</Text>
+              </View>
+            )}
           </View>
 
           <Text style={{ color: colors.text.tertiary, fontSize: 11, marginTop: 1 }}>
@@ -418,7 +519,7 @@ function NoteCard({
           {/* Action buttons */}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             <ActionBtn icon="pencil-outline"       label="Edit"         color={colors.text.brand}     border={colors.border.brand}   onPress={onEdit}       />
-            <ActionBtn icon="cards-playing-outline" label="Review Hand"  color="#7c3aed"               border="#7c3aed44"             onPress={onReviewHand} />
+            <ActionBtn icon="cards-playing-outline" label="Review Hand"  color="#7c3aed"               border="#7c3aed44"             onPress={onReviewHand} badge={reviewHandBadge ?? undefined} />
             <ActionBtn icon="content-copy"         label="Copy"         color={colors.text.secondary} border={colors.border.default} onPress={onCopy}       />
             <ActionBtn icon="export-variant"       label="Export"       color={colors.text.secondary} border={colors.border.default} onPress={onExport}     />
             <ActionBtn icon="delete-outline"       label="Delete"       color={colors.text.danger}    border={colors.border.danger}  onPress={onDelete}     />
@@ -429,8 +530,8 @@ function NoteCard({
   );
 }
 
-function ActionBtn({ icon, label, color, border, onPress }: {
-  icon: any; label: string; color: string; border: string; onPress: () => void;
+function ActionBtn({ icon, label, color, border, onPress, badge }: {
+  icon: any; label: string; color: string; border: string; onPress: () => void; badge?: string;
 }) {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.75}
@@ -441,6 +542,11 @@ function ActionBtn({ icon, label, color, border, onPress }: {
       }}>
       <MaterialCommunityIcons name={icon} size={14} color={color} />
       <Text style={{ color, fontSize: 12, fontWeight: "700" }}>{label}</Text>
+      {badge ? (
+        <View style={{ backgroundColor: "#38a16922", borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1 }}>
+          <Text style={{ color: "#38a169", fontSize: 10, fontWeight: "700" }}>{badge}</Text>
+        </View>
+      ) : null}
     </TouchableOpacity>
   );
 }
@@ -525,7 +631,23 @@ export default function NotesScreen() {
   }
 
   const TAB_BAR_H = (insets.bottom > 0 ? insets.bottom : 16) + 68;
-  const atFreeLimit = !isPro && notes.length >= FREE_NOTES_LIMIT;
+  const trial = getTrialStatus();
+  const canUseAI = isPro || trial.allowed;
+  const atFreeLimit = !isPro && !trial.allowed && notes.length >= FREE_NOTES_LIMIT;
+
+  function reviewHandBadgeFor(): string | null {
+    if (isPro) return null;
+    if (!trial.allowed) return null;
+    if (!trial.trialStarted) return "7-day free";
+    return `${trial.daysLeft}d left`;
+  }
+
+  function handleReviewHand(entry: NoteEntry) {
+    const t = getTrialStatus();
+    if (!isPro && !t.allowed) { setPaywallVisible(true); return; }
+    markTrialStarted();
+    setHandReviewEntry(entry);
+  }
 
   function handleAddPress() {
     if (atFreeLimit) { setPaywallVisible(true); return; }
@@ -535,11 +657,14 @@ export default function NotesScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg.primary }}>
-      <PaywallModal visible={paywallVisible} feature="notesTab" onClose={() => setPaywallVisible(false)} />
+      <PaywallModal visible={paywallVisible} feature="unlimitedNotes" onClose={() => setPaywallVisible(false)} />
       <HandAnalysisModal
         visible={!!handReviewEntry}
         notes={handReviewEntry ? (handReviewEntry.enhanced_notes ?? handReviewEntry.raw_notes) : ""}
+        noteId={handReviewEntry?.id}
+        savedAnalysis={handReviewEntry?.hand_analysis}
         onClose={() => setHandReviewEntry(null)}
+        onSaved={refresh}
       />
 
       <ScrollView
@@ -603,7 +728,8 @@ export default function NotesScreen() {
             onDelete={() => handleDelete(entry.id)}
             onCopy={() => handleCopy(entry)}
             onExport={() => handleExport(entry)}
-            onReviewHand={() => setHandReviewEntry(entry)}
+            onReviewHand={() => handleReviewHand(entry)}
+            reviewHandBadge={reviewHandBadgeFor()}
           />
         ))}
       </ScrollView>
@@ -628,8 +754,7 @@ export default function NotesScreen() {
         onClose={() => setEditorVisible(false)}
         onSaved={refresh}
         colors={colors}
-        radius={radius}
-        isPro={isPro}
+        isPro={canUseAI}
       />
     </View>
   );

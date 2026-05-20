@@ -1,5 +1,6 @@
 import { PaywallModal } from "@/components/PaywallModal";
 import { useSubscription } from "@/context/SubscriptionContext";
+import { getTrialStatus } from "@/hooks/use-trial";
 import { usePokerTheme } from "@/hooks/use-poker-theme";
 import { useThemeContext, type ThemePreference } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -164,48 +165,57 @@ export default function SettingsScreen() {
       <SectionLabel label="Subscription" colors={colors} spacing={spacing} typography={typography} />
       <View style={card}>
         {/* Plan status */}
-        <View style={{
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: spacing.lg,
-          paddingVertical: spacing.md + 2,
-          gap: spacing.md,
-        }}>
-          <View style={{
-            width: 38, height: 38, borderRadius: radius.sm,
-            backgroundColor: isPro ? "#7c3aed18" : colors.bg.primary,
-            borderWidth: 1,
-            borderColor: isPro ? "#7c3aed44" : colors.border.default,
-            alignItems: "center", justifyContent: "center",
-          }}>
-            <MaterialCommunityIcons
-              name={isPro ? "crown" : "crown-outline"}
-              size={20}
-              color={isPro ? "#7c3aed" : colors.text.secondary}
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: colors.text.primary, ...typography.bodySm, fontWeight: "600" }}>
-              {isPro ? "PokerRoll Pro" : "Free Plan"}
-            </Text>
-            <Text style={{ color: colors.text.tertiary, ...typography.caption, marginTop: 2 }}>
-              {isPro ? "All features unlocked" : "Upgrade to unlock all features"}
-            </Text>
-          </View>
-          {!isPro && (
-            <TouchableOpacity
-              onPress={() => setPaywallVisible(true)}
-              style={{
-                backgroundColor: "#7c3aed",
-                borderRadius: radius.full,
-                paddingHorizontal: spacing.md,
-                paddingVertical: spacing.xs,
-              }}
-            >
-              <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>Upgrade</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        {(() => {
+          const trial = getTrialStatus();
+          const inTrial = !isPro && trial.allowed;
+          const iconName = isPro ? "crown" : inTrial ? "timer-sand" : "crown-outline";
+          const iconColor = isPro ? "#7c3aed" : inTrial ? "#d97706" : colors.text.secondary;
+          const iconBg = isPro ? "#7c3aed18" : inTrial ? "#d9770618" : colors.bg.primary;
+          const iconBorder = isPro ? "#7c3aed44" : inTrial ? "#d9770644" : colors.border.default;
+          const planLabel = isPro ? "PokerRoll Pro" : inTrial ? "Free Trial" : "Free Plan";
+          const planSub = isPro
+            ? "All features unlocked"
+            : inTrial
+              ? `${trial.daysLeft} day${trial.daysLeft === 1 ? "" : "s"} remaining — AI features included`
+              : "AI features locked · 30 session limit";
+          return (
+            <View style={{
+              flexDirection: "row", alignItems: "center",
+              paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2, gap: spacing.md,
+            }}>
+              <View style={{
+                width: 38, height: 38, borderRadius: radius.sm,
+                backgroundColor: iconBg, borderWidth: 1, borderColor: iconBorder,
+                alignItems: "center", justifyContent: "center",
+              }}>
+                <MaterialCommunityIcons name={iconName} size={20} color={iconColor} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text.primary, ...typography.bodySm, fontWeight: "600" }}>
+                  {planLabel}
+                </Text>
+                <Text style={{ color: colors.text.tertiary, ...typography.caption, marginTop: 2 }}>
+                  {planSub}
+                </Text>
+              </View>
+              {!isPro && (
+                <TouchableOpacity
+                  onPress={() => setPaywallVisible(true)}
+                  style={{
+                    backgroundColor: inTrial ? "#d97706" : "#7c3aed",
+                    borderRadius: radius.full,
+                    paddingHorizontal: spacing.md,
+                    paddingVertical: spacing.xs,
+                  }}
+                >
+                  <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>
+                    {inTrial ? "Go Pro" : "Upgrade"}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        })()}
 
         <View style={divider} />
 

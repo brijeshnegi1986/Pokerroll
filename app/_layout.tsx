@@ -9,12 +9,14 @@ import { Text, TouchableOpacity } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import { initDB } from "../db/database";
+import { markTrialStarted } from "../hooks/use-trial";
 
 function RootLayoutContent() {
   const { colors: themeColors, isDark } = useThemeContext();
 
   useEffect(() => {
     initDB();
+    markTrialStarted();
   }, []);
 
   const navigationTheme: Theme = {

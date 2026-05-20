@@ -1,5 +1,6 @@
 import { PaywallModal } from "@/components/PaywallModal";
 import { useSubscription } from "@/context/SubscriptionContext";
+import { getTrialStatus, markTrialStarted } from "@/hooks/use-trial";
 import { usePokerTheme } from "@/hooks/use-poker-theme";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
@@ -91,7 +92,9 @@ export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 
   const openLive = () => {
     setActionSheetVisible(false);
-    if (!isPro) { setPaywallVisible(true); return; }
+    const trial = getTrialStatus();
+    if (!isPro && !trial.allowed) { setPaywallVisible(true); return; }
+    markTrialStarted();
     router.push("/live");
   };
   const openAdd  = () => { setActionSheetVisible(false); router.push("/add"); };
@@ -277,7 +280,7 @@ export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
                 letterSpacing: 0.1,
               }}
             >
-              {"Start\nSession"}
+              {"New\nGame"}
             </Text>
           </TouchableOpacity>
         </Animated.View>
@@ -329,7 +332,7 @@ export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
                 marginBottom: spacing.sm,
               }}
             >
-              New Session
+              New Game
             </Text>
             <Text
               style={{
@@ -357,9 +360,23 @@ export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
               <Text style={{ color: colors.text.onBrand, fontSize: 16, fontWeight: "700" }}>
                 Start Live Session
               </Text>
-              {!isPro && (
-                <MaterialCommunityIcons name="crown" size={16} color={colors.text.onBrand} style={{ opacity: 0.85 }} />
-              )}
+              {(() => {
+                if (isPro) return null;
+                const trial = getTrialStatus();
+                if (!trial.allowed) return (
+                  <MaterialCommunityIcons name="crown" size={16} color={colors.text.onBrand} style={{ opacity: 0.85 }} />
+                );
+                if (!trial.trialStarted) return (
+                  <View style={{ backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
+                    <Text style={{ color: colors.text.onBrand, fontSize: 11, fontWeight: "700" }}>7-day free</Text>
+                  </View>
+                );
+                return (
+                  <View style={{ backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
+                    <Text style={{ color: colors.text.onBrand, fontSize: 11, fontWeight: "700" }}>{trial.daysLeft}d left</Text>
+                  </View>
+                );
+              })()}
             </TouchableOpacity>
             <TouchableOpacity
               onPress={openAdd}

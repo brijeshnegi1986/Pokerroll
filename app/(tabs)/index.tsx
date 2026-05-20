@@ -409,7 +409,7 @@ export default function HomeScreen() {
                     }}
                   >
                     <Text style={{ color: colors.text.onBrand, ...typography.body, fontWeight: "600" }}>
-                      Start Session
+                      New Game
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity

@@ -2,7 +2,8 @@ import { SegmentedControl } from "@/components/SegmentedControl";
 import { VenueSelector } from "@/components/VenueSelector";
 import { PaywallModal } from "@/components/PaywallModal";
 import { useSubscription } from "@/context/SubscriptionContext";
-import { FREE_CASH_LIMIT, FREE_TOURNAMENT_LIMIT } from "@/constants/subscription";
+import { FREE_SESSION_LIMIT } from "@/constants/subscription";
+import { getTrialStatus } from "@/hooks/use-trial";
 import { usePokerTheme } from "@/hooks/use-poker-theme";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
@@ -17,7 +18,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { getSessions, getSetting, SessionType, startLiveSession, startLiveTournament } from "../../db/database";
+import { getTotalSessionCount, getSetting, SessionType, startLiveSession, startLiveTournament } from "../../db/database";
 
 const STAKES       = ["1/1", "1/2", "2/3", "5/5", "10/10"];
 const QUICK_BUYINS = [100, 200, 300, 500, 1000, 2000, 5000];
@@ -61,9 +62,8 @@ export default function StartSessionScreen() {
     if (!isReady) return;
 
     if (!isPro) {
-      const existing = getSessions(type);
-      const limit = type === "tournament" ? FREE_TOURNAMENT_LIMIT : FREE_CASH_LIMIT;
-      if (existing.length >= limit) {
+      const trial = getTrialStatus();
+      if (!trial.allowed && getTotalSessionCount() >= FREE_SESSION_LIMIT) {
         setPaywallVisible(true);
         return;
       }
