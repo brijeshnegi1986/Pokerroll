@@ -6,7 +6,7 @@ import * as AuthSession from "expo-auth-session";
 import * as Crypto from "expo-crypto";
 import * as WebBrowser from "expo-web-browser";
 import { router } from "expo-router";
-import { Platform, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Platform, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
@@ -18,24 +18,20 @@ export default function SignInScreen() {
 
   async function signInWithGoogle() {
     try {
-      const redirectTo = AuthSession.makeRedirectUri({
-        scheme: "pokerroll",
-        path: "auth/callback",
-      });
+      // Auto-detects correct URL: exp://x.x.x.x:8081 in Expo Go, pokerroll:// in production
+      const redirectTo = AuthSession.makeRedirectUri();
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo,
           skipBrowserRedirect: true,
-          queryParams: {
-            client_id: "532094438166-ogjdaoji3tp4gt1qa1nplj5en0lh71p5.apps.googleusercontent.com",
-          },
         },
       });
 
       if (error || !data.url) {
         console.error("OAuth error", error);
+        Alert.alert("Sign in failed", "Could not start Google sign in. Try again.");
         return;
       }
 
@@ -43,12 +39,10 @@ export default function SignInScreen() {
 
       if (result.type === "success" && result.url) {
         const url = new URL(result.url);
-        // Handle both token hash and code flow
         const code = url.searchParams.get("code");
-        const accessToken = url.searchParams.get("access_token") ??
-          new URLSearchParams(url.hash.slice(1)).get("access_token");
-        const refreshToken = url.searchParams.get("refresh_token") ??
-          new URLSearchParams(url.hash.slice(1)).get("refresh_token");
+        const hashParams = new URLSearchParams(url.hash.slice(1));
+        const accessToken = url.searchParams.get("access_token") ?? hashParams.get("access_token");
+        const refreshToken = url.searchParams.get("refresh_token") ?? hashParams.get("refresh_token");
 
         if (code) {
           await supabase.auth.exchangeCodeForSession(code);
@@ -56,9 +50,12 @@ export default function SignInScreen() {
           await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
         }
         router.replace("/(tabs)");
+      } else if (result.type === "cancel") {
+        // User closed the browser — do nothing
       }
     } catch (e) {
       console.error("Google sign in error", e);
+      Alert.alert("Sign in failed", "Something went wrong. Please try again.");
     }
   }
 
