@@ -46,12 +46,26 @@ export default function TabLayout() {
         headerShadowVisible: true,
       }}
     >
-      <Tabs.Screen name="index"       options={{ title: "Dashboard" }} />
-      <Tabs.Screen name="history"     options={{ title: "History" }} />
-      <Tabs.Screen name="notes"    options={{ title: "Notes" }} />
-      <Tabs.Screen name="settings" options={{ title: "Settings" }} />
-      <Tabs.Screen name="live"        options={{ headerLeft: backButton }} />
-      <Tabs.Screen name="add"         options={{ title: "Add Session", headerLeft: backButton }} />
+      <Tabs.Screen name="index"   options={{ title: "Dashboard" }} />
+      <Tabs.Screen name="history" options={{ title: "History" }} />
+      <Tabs.Screen name="notes"   options={{ title: "Notes" }} />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: "Profile",
+          headerRight: () => (
+            <TouchableOpacity
+              onPress={() => router.push("/settings")}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={{ marginRight: 16 }}
+            >
+              <MaterialCommunityIcons name="cog-outline" size={22} color={colors.text.primary} />
+            </TouchableOpacity>
+          ),
+        }}
+      />
+      <Tabs.Screen name="live"    options={{ headerLeft: backButton, href: null }} />
+      <Tabs.Screen name="add"     options={{ title: "Add Session", headerLeft: backButton, href: null }} />
     </Tabs>
   );
 }

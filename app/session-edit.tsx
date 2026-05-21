@@ -18,7 +18,7 @@ import { getRebuysTotal, updateSession } from "../db/database";
 export default function SessionEditScreen() {
   const { session: sessionParam } = useLocalSearchParams();
   const editing = sessionParam ? JSON.parse(sessionParam as string) : null;
-  const { colors, spacing, radius, typography } = usePokerTheme();
+  const { colors, spacing, radius, typography, inputTypo } = usePokerTheme();
 
   const isTournament = (editing?.type ?? "cash") === "tournament";
 
@@ -177,7 +177,7 @@ export default function SessionEditScreen() {
                     value={buyIn} onChangeText={setBuyIn} returnKeyType="next"
                     onSubmitEditing={() => cashOutRef.current?.focus()}
                     onFocus={() => setFocusedField("buyIn")} onBlur={() => setFocusedField(null)}
-                    style={{ flex: 1, color: colors.text.primary, ...typography.body, fontWeight: "600", textAlign: "right" }}
+                    style={{ flex: 1, color: colors.text.primary, ...inputTypo.body, fontWeight: "600", textAlign: "right" }}
                   />
                 </View>
                 <View style={{ height: 1, backgroundColor: colors.border.subtle, marginHorizontal: spacing.lg }} />
@@ -189,7 +189,7 @@ export default function SessionEditScreen() {
                     keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.text.disabled}
                     value={cashOut} onChangeText={setCashOut} returnKeyType="done"
                     onFocus={() => setFocusedField("cashOut")} onBlur={() => setFocusedField(null)}
-                    style={{ flex: 1, color: colors.text.primary, ...typography.body, fontWeight: "600", textAlign: "right" }}
+                    style={{ flex: 1, color: colors.text.primary, ...inputTypo.body, fontWeight: "600", textAlign: "right" }}
                   />
                 </View>
               </View>
@@ -216,7 +216,7 @@ export default function SessionEditScreen() {
                 <TextInput
                   placeholder="Tournament name" placeholderTextColor={colors.text.disabled}
                   value={tournamentName} onChangeText={setTournamentName} returnKeyType="next"
-                  style={{ color: colors.text.primary, paddingVertical: spacing.md, ...typography.body }}
+                  style={{ color: colors.text.primary, paddingVertical: spacing.md, ...inputTypo.body }}
                 />
               </View>
 
@@ -230,7 +230,7 @@ export default function SessionEditScreen() {
                 <TextInput
                   keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.text.disabled}
                   value={buyIn} onChangeText={setBuyIn} returnKeyType="next"
-                  style={{ flex: 1, color: colors.text.primary, paddingVertical: spacing.md, ...typography.body, fontWeight: "600", textAlign: "right" }}
+                  style={{ flex: 1, color: colors.text.primary, paddingVertical: spacing.md, ...inputTypo.body, fontWeight: "600", textAlign: "right" }}
                 />
               </View>
 
@@ -241,7 +241,7 @@ export default function SessionEditScreen() {
                     <TextInput
                       keyboardType="number-pad" placeholder="—" placeholderTextColor={colors.text.disabled}
                       value={entries} onChangeText={setEntries} returnKeyType="next"
-                      style={{ color: colors.text.primary, paddingVertical: spacing.md, ...typography.body, textAlign: "right" }}
+                      style={{ color: colors.text.primary, paddingVertical: spacing.md, ...inputTypo.body, textAlign: "right" }}
                     />
                   </View>
                 </View>
@@ -251,7 +251,7 @@ export default function SessionEditScreen() {
                     <TextInput
                       keyboardType="number-pad" placeholder="—" placeholderTextColor={colors.text.disabled}
                       value={position} onChangeText={setPosition} returnKeyType="next"
-                      style={{ color: colors.text.primary, paddingVertical: spacing.md, ...typography.body, textAlign: "right" }}
+                      style={{ color: colors.text.primary, paddingVertical: spacing.md, ...inputTypo.body, textAlign: "right" }}
                     />
                   </View>
                 </View>
@@ -267,7 +267,7 @@ export default function SessionEditScreen() {
                 <TextInput
                   keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.text.disabled}
                   value={payout} onChangeText={setPayout} returnKeyType="done"
-                  style={{ flex: 1, color: colors.text.primary, paddingVertical: spacing.md, ...typography.body, fontWeight: "600", textAlign: "right" }}
+                  style={{ flex: 1, color: colors.text.primary, paddingVertical: spacing.md, ...inputTypo.body, fontWeight: "600", textAlign: "right" }}
                 />
               </View>
             </>
@@ -309,7 +309,7 @@ export default function SessionEditScreen() {
               onChangeText={setNotes}
               style={{
                 color: colors.text.primary,
-                ...typography.bodySm,
+                ...inputTypo.bodySm,
                 lineHeight: 22,
                 minHeight: 80,
                 textAlignVertical: "top",

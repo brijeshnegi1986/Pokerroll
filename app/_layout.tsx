@@ -1,5 +1,6 @@
 import { AppThemeProvider, useThemeContext } from "@/store/ThemeContext";
 import { SubscriptionProvider } from "@/context/SubscriptionContext";
+import { AuthProvider } from "@/context/AuthContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Theme, ThemeProvider } from "@react-navigation/native";
 import { router, Stack } from "expo-router";
@@ -90,6 +91,31 @@ function RootLayoutContent() {
             }}
           />
           <Stack.Screen
+            name="sign-in"
+            options={{ presentation: "modal", headerShown: false }}
+          />
+          <Stack.Screen
+            name="settings"
+            options={{
+              title: "Settings",
+              headerStyle: { backgroundColor: themeColors.bg.primary },
+              headerTintColor: themeColors.text.primary,
+              headerTitleStyle: { fontWeight: "700", fontSize: 17 },
+              headerLeft: () => (
+                <TouchableOpacity
+                  onPress={() => router.back()}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  style={{ flexDirection: "row", alignItems: "center", paddingRight: 12 }}
+                >
+                  <MaterialCommunityIcons name="arrow-left" size={20} color={themeColors.text.primary} />
+                  <Text style={{ marginLeft: 8, color: themeColors.text.primary, fontWeight: "600", fontSize: 16 }}>
+                    Back
+                  </Text>
+                </TouchableOpacity>
+              ),
+            }}
+          />
+          <Stack.Screen
             name="modal"
             options={{ presentation: "modal", title: "Modal" }}
           />
@@ -104,7 +130,9 @@ export default function RootLayout() {
   return (
     <AppThemeProvider>
       <SubscriptionProvider>
-        <RootLayoutContent />
+        <AuthProvider>
+          <RootLayoutContent />
+        </AuthProvider>
       </SubscriptionProvider>
     </AppThemeProvider>
   );

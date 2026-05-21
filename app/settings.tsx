@@ -20,7 +20,7 @@ import {
   getSessions,
   getSetting,
   setSetting,
-} from "../../db/database";
+} from "@/db/database";
 
 const APP_VERSION = "1.0.0";
 const STAKES_OPTIONS = ["1/1", "1/2", "2/3", "5/5", "10/10"];

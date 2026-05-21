@@ -14,7 +14,7 @@ import {
 import { endLiveSession, endLiveTournament, getActiveSession, getRebuysTotal, parseRebuys, Session } from "../../db/database";
 
 export default function EndSessionScreen() {
-  const { colors, spacing, radius, typography } = usePokerTheme();
+  const { colors, spacing, radius, typography, inputTypo } = usePokerTheme();
   const [session, setSession] = useState<Session | null>(null);
 
   // Cash
@@ -221,7 +221,7 @@ export default function EndSessionScreen() {
                 onChangeText={setCashOut}
                 returnKeyType="done"
                 onSubmitEditing={handleConfirm}
-                style={{ flex: 1, color: colors.text.primary, paddingVertical: spacing.lg, ...typography.heading2, fontWeight: "700", textAlign: "right" }}
+                style={{ flex: 1, color: colors.text.primary, paddingVertical: spacing.lg, ...inputTypo.heading2, fontWeight: "700", textAlign: "right" }}
               />
             </View>
           </>
@@ -250,7 +250,7 @@ export default function EndSessionScreen() {
                     value={position}
                     onChangeText={setPosition}
                     returnKeyType="next"
-                    style={{ color: colors.text.primary, paddingVertical: spacing.lg, ...typography.heading2, fontWeight: "700", textAlign: "center" }}
+                    style={{ color: colors.text.primary, paddingVertical: spacing.lg, ...inputTypo.heading2, fontWeight: "700", textAlign: "center" }}
                   />
                 </View>
               </View>
@@ -276,7 +276,7 @@ export default function EndSessionScreen() {
                     onChangeText={setPayout}
                     returnKeyType="done"
                     onSubmitEditing={handleConfirm}
-                    style={{ flex: 1, color: colors.text.primary, paddingVertical: spacing.lg, ...typography.heading2, fontWeight: "700", textAlign: "right" }}
+                    style={{ flex: 1, color: colors.text.primary, paddingVertical: spacing.lg, ...inputTypo.heading2, fontWeight: "700", textAlign: "right" }}
                   />
                 </View>
               </View>

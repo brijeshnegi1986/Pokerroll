@@ -44,7 +44,7 @@ function formatCountdown(seconds: number): string {
 }
 
 export default function ActiveSessionScreen() {
-  const { colors, spacing, radius, typography } = usePokerTheme();
+  const { colors, spacing, radius, typography, inputTypo } = usePokerTheme();
   const { width } = useWindowDimensions();
 
   const innerRing = Math.min(width * 0.55, 220);
@@ -496,7 +496,7 @@ export default function ActiveSessionScreen() {
                 placeholderTextColor={colors.text.disabled}
                 value={breakNote}
                 onChangeText={setBreakNote}
-                style={{ color: colors.text.primary, ...typography.bodySm, lineHeight: 22, textAlignVertical: "top" }}
+                style={{ color: colors.text.primary, ...inputTypo.bodySm, lineHeight: 22, textAlignVertical: "top" }}
               />
             </View>
 
@@ -570,7 +570,7 @@ export default function ActiveSessionScreen() {
                 placeholderTextColor={colors.text.disabled}
                 value={editingNotes}
                 onChangeText={setEditingNotes}
-                style={{ color: colors.text.primary, ...typography.bodySm, lineHeight: 22, textAlignVertical: "top", minHeight: 120 }}
+                style={{ color: colors.text.primary, ...inputTypo.bodySm, lineHeight: 22, textAlignVertical: "top", minHeight: 120 }}
               />
             </View>
 
@@ -625,7 +625,7 @@ export default function ActiveSessionScreen() {
                 onChangeText={setRebuyAmount}
                 returnKeyType="done"
                 onSubmitEditing={handleConfirmRebuy}
-                style={{ flex: 1, color: colors.text.primary, paddingVertical: spacing.lg, ...typography.heading2, fontWeight: "700", textAlign: "right" }}
+                style={{ flex: 1, color: colors.text.primary, paddingVertical: spacing.lg, ...inputTypo.heading2, fontWeight: "700", textAlign: "right" }}
               />
             </View>
 

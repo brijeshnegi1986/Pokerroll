@@ -251,9 +251,19 @@ function NoteEditorModal({
 
           {/* Notes body */}
           <View>
-            <Text style={{ color: colors.text.tertiary, fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>
-              Notes
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <Text style={{ color: colors.text.tertiary, fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.8 }}>
+                Notes
+              </Text>
+              {body.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => { setBody(""); setCompressedPreview(null); }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={{ color: colors.text.danger, fontSize: 12, fontWeight: "600" }}>Clear</Text>
+                </TouchableOpacity>
+              )}
+            </View>
             <TextInput
               value={body}
               onChangeText={setBody}
@@ -369,7 +379,7 @@ function NoteCard({
 
   return (
     <View style={{
-      backgroundColor: colors.bg.secondary, borderRadius: radius.lg, borderWidth: 1,
+      backgroundColor: colors.bg.tertiary, borderRadius: radius.lg, borderWidth: 1,
       borderColor: colors.border.default, marginBottom: 12, overflow: "hidden",
     }}>
       {/* Collapsed header */}
@@ -601,7 +611,7 @@ export default function NotesScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg.primary }}>
+    <View style={{ flex: 1, backgroundColor: colors.bg.secondary }}>
       <PaywallModal visible={paywallVisible} feature="unlimitedNotes" onClose={() => setPaywallVisible(false)} />
       <HandAnalysisModal
         visible={!!handReviewEntry}

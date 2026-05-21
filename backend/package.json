@@ -1,7 +1,7 @@
 {
-  "name": "pokertracker-backend",
+  "name": "pokerroll-backend",
   "version": "1.0.0",
-  "description": "Proxy server for PokerTracker AI hand analysis",
+  "description": "Proxy server for PokerRoll AI hand analysis",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

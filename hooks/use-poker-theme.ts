@@ -1,4 +1,4 @@
-import { Radius, Spacing, Typography } from "@/constants/theme";
+import { InputTypography, Radius, Spacing, Typography } from "@/constants/theme";
 import { useThemeContext } from "@/store/ThemeContext";
 
 export function usePokerTheme() {
@@ -8,6 +8,7 @@ export function usePokerTheme() {
     spacing: Spacing,
     radius: Radius,
     typography: Typography,
+    inputTypo: InputTypography,
     isDark,
     scheme: preference,
   };

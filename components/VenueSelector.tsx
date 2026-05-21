@@ -31,7 +31,7 @@ interface Props {
 }
 
 export function VenueSelector({ stateRegion, setStateRegion, venue, setVenue }: Props) {
-  const { colors, spacing, radius, typography } = usePokerTheme();
+  const { colors, spacing, radius, typography, inputTypo } = usePokerTheme();
   const inputRef = useRef<TextInput>(null);
 
   // null    = no chip selected → input disabled, user must pick from chips below
@@ -135,7 +135,7 @@ export function VenueSelector({ stateRegion, setStateRegion, venue, setVenue }: 
             flex: 1,
             height: 52,
             color: venue.length > 0 ? colors.text.primary : colors.text.disabled,
-            ...typography.body,
+            ...inputTypo.body,
           }}
         />
         {showClear && (

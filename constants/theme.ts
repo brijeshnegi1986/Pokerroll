@@ -175,14 +175,28 @@ export const Radius = {
 } as const;
 
 export const Typography = {
-  display: { fontSize: 36, lineHeight: 44 },
-  heading1: { fontSize: 28, lineHeight: 36 },
-  heading2: { fontSize: 24, lineHeight: 30 },
-  heading3: { fontSize: 20, lineHeight: 28 },
-  body: { fontSize: 16, lineHeight: 24 },
-  bodySm: { fontSize: 14, lineHeight: 20 },
-  caption: { fontSize: 12, lineHeight: 16 },
-  label: { fontSize: 14, lineHeight: 20 },
+  display:  { fontSize: 36, lineHeight: 44, includeFontPadding: false },
+  heading1: { fontSize: 28, lineHeight: 36, includeFontPadding: false },
+  heading2: { fontSize: 24, lineHeight: 30, includeFontPadding: false },
+  heading3: { fontSize: 20, lineHeight: 28, includeFontPadding: false },
+  body:     { fontSize: 16, lineHeight: 24, includeFontPadding: false },
+  bodySm:   { fontSize: 14, lineHeight: 20, includeFontPadding: false },
+  caption:  { fontSize: 12, lineHeight: 16, includeFontPadding: false },
+  label:    { fontSize: 14, lineHeight: 20, includeFontPadding: false },
+} as const;
+
+// Use in TextInput styles instead of Typography.
+// Strips lineHeight (causes iOS single-line TextInput text to clip at bottom)
+// and includeFontPadding (causes Android TextInput text to clip at bottom).
+export const InputTypography = {
+  display:  { fontSize: 36 },
+  heading1: { fontSize: 28 },
+  heading2: { fontSize: 24 },
+  heading3: { fontSize: 20 },
+  body:     { fontSize: 16 },
+  bodySm:   { fontSize: 14 },
+  caption:  { fontSize: 12 },
+  label:    { fontSize: 14 },
 } as const;
 
 // Legacy Colors kept for backward compat with use-theme-color

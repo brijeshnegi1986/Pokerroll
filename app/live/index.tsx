@@ -28,7 +28,7 @@ function getAvailableTypes(): SessionType[] {
 }
 
 export default function StartSessionScreen() {
-  const { colors, spacing, radius, typography } = usePokerTheme();
+  const { colors, spacing, radius, typography, inputTypo } = usePokerTheme();
   const { isPro } = useSubscription();
   const [paywallVisible, setPaywallVisible] = useState(false);
 
@@ -161,7 +161,7 @@ export default function StartSessionScreen() {
                   value={tournamentName}
                   onChangeText={setTournamentName}
                   returnKeyType="next"
-                  style={{ color: colors.text.primary, paddingVertical: spacing.md, ...typography.body }}
+                  style={{ color: colors.text.primary, paddingVertical: spacing.md, ...inputTypo.body }}
                 />
               </View>
             </>
@@ -240,7 +240,7 @@ export default function StartSessionScreen() {
                   value={entries}
                   onChangeText={setEntries}
                   returnKeyType="done"
-                  style={{ color: colors.text.primary, paddingVertical: spacing.md, ...typography.body, textAlign: "right" }}
+                  style={{ color: colors.text.primary, paddingVertical: spacing.md, ...inputTypo.body, textAlign: "right" }}
                 />
               </View>
             </>

@@ -18,14 +18,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const VISIBLE_TABS = ["index", "history", "notes", "settings"] as const;
+const VISIBLE_TABS = ["index", "history", "notes", "profile"] as const;
 type VisibleTab = (typeof VISIBLE_TABS)[number];
 
 const TAB_CONFIG: Record<VisibleTab, { icon: keyof typeof MaterialCommunityIcons.glyphMap; label: string }> = {
-  index:    { icon: "home-variant",     label: "Home"     },
-  history:  { icon: "history",          label: "Sessions" },
-  notes:    { icon: "notebook-outline", label: "Notes"    },
-  settings: { icon: "cog-outline",      label: "Settings" },
+  index:    { icon: "home-variant",           label: "Home"     },
+  history:  { icon: "history",                label: "Sessions" },
+  notes:    { icon: "notebook-outline",       label: "Notes"    },
+  profile:  { icon: "account-circle-outline", label: "Profile"  },
 };
 
 const FAB_SIZE = 68;

@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "PokerTracker",
-    "slug": "PokerTracker",
+    "name": "PokerRoll",
+    "slug": "PokerRoll",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "pokertracker",
+    "scheme": "pokerroll",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -41,7 +41,8 @@
           }
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

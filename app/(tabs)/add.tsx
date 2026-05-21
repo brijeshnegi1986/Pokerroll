@@ -28,7 +28,7 @@ export default function AddSessionScreen() {
   const { session } = useLocalSearchParams();
   const editing = session ? JSON.parse(session as string) : null;
 
-  const { colors, spacing, radius, typography } = usePokerTheme();
+  const { colors, spacing, radius, typography, inputTypo } = usePokerTheme();
   const { isPro } = useSubscription();
   const [paywallVisible, setPaywallVisible] = useState(false);
   const cashOutRef = useRef<TextInput>(null);
@@ -228,11 +228,11 @@ export default function AddSessionScreen() {
               <View style={{ ...inputCard, marginBottom: spacing["2xl"] }}>
                 <MoneyRow label="Buy-in" value={buyIn} onChange={setBuyIn}
                   returnKeyType="next" onSubmit={() => cashOutRef.current?.focus()}
-                  colors={colors} spacing={spacing} typography={typography} />
+                  colors={colors} spacing={spacing} typography={typography} inputTypo={inputTypo} />
                 <View style={{ height: 1, backgroundColor: colors.border.subtle, marginHorizontal: spacing.lg }} />
                 <MoneyRow ref={cashOutRef} label="Cash-out" value={cashOut} onChange={setCashOut}
                   returnKeyType="done"
-                  colors={colors} spacing={spacing} typography={typography} />
+                  colors={colors} spacing={spacing} typography={typography} inputTypo={inputTypo} />
               </View>
 
               <SectionLabel label="Stakes" colors={colors} spacing={spacing} typography={typography} />
@@ -262,7 +262,7 @@ export default function AddSessionScreen() {
                   value={tournamentName}
                   onChangeText={setTournamentName}
                   returnKeyType="next"
-                  style={{ color: colors.text.primary, paddingVertical: spacing.md, ...typography.body }}
+                  style={{ color: colors.text.primary, paddingVertical: spacing.md, ...inputTypo.body }}
                 />
               </View>
 
@@ -283,7 +283,7 @@ export default function AddSessionScreen() {
                   value={buyIn}
                   onChangeText={setBuyIn}
                   returnKeyType="next"
-                  style={{ flex: 1, color: colors.text.primary, paddingVertical: spacing.md, ...typography.body, fontWeight: "600", textAlign: "right" }}
+                  style={{ flex: 1, color: colors.text.primary, paddingVertical: spacing.md, ...inputTypo.body, fontWeight: "600", textAlign: "right" }}
                 />
               </View>
 
@@ -298,7 +298,7 @@ export default function AddSessionScreen() {
                       value={entries}
                       onChangeText={setEntries}
                       returnKeyType="next"
-                      style={{ color: colors.text.primary, paddingVertical: spacing.md, ...typography.body, textAlign: "right" }}
+                      style={{ color: colors.text.primary, paddingVertical: spacing.md, ...inputTypo.body, textAlign: "right" }}
                     />
                   </View>
                 </View>
@@ -312,7 +312,7 @@ export default function AddSessionScreen() {
                       value={position}
                       onChangeText={setPosition}
                       returnKeyType="next"
-                      style={{ color: colors.text.primary, paddingVertical: spacing.md, ...typography.body, textAlign: "right" }}
+                      style={{ color: colors.text.primary, paddingVertical: spacing.md, ...inputTypo.body, textAlign: "right" }}
                     />
                   </View>
                 </View>
@@ -335,7 +335,7 @@ export default function AddSessionScreen() {
                   value={payout}
                   onChangeText={setPayout}
                   returnKeyType="done"
-                  style={{ flex: 1, color: colors.text.primary, paddingVertical: spacing.md, ...typography.body, fontWeight: "600", textAlign: "right" }}
+                  style={{ flex: 1, color: colors.text.primary, paddingVertical: spacing.md, ...inputTypo.body, fontWeight: "600", textAlign: "right" }}
                 />
               </View>
             </>
@@ -416,7 +416,7 @@ function SectionLabel({ label, colors, spacing, typography }: any) {
 }
 
 const MoneyRow = require("react").forwardRef(function MoneyRow(
-  { label, value, onChange, returnKeyType, onSubmit, colors, spacing, typography }: any,
+  { label, value, onChange, returnKeyType, onSubmit, colors, spacing, typography, inputTypo }: any,
   ref: any
 ) {
   return (
@@ -432,7 +432,7 @@ const MoneyRow = require("react").forwardRef(function MoneyRow(
         onChangeText={onChange}
         returnKeyType={returnKeyType}
         onSubmitEditing={onSubmit}
-        style={{ flex: 1, color: colors.text.primary, ...typography.body, fontWeight: "600", textAlign: "right" }}
+        style={{ flex: 1, color: colors.text.primary, ...inputTypo.body, fontWeight: "600", textAlign: "right" }}
       />
     </View>
   );
