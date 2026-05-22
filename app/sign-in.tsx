@@ -5,6 +5,7 @@ import * as AppleAuthentication from "expo-apple-authentication";
 import * as AuthSession from "expo-auth-session";
 import * as Crypto from "expo-crypto";
 import * as WebBrowser from "expo-web-browser";
+import Constants from "expo-constants";
 import { router } from "expo-router";
 import { Alert, Platform, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,14 +13,23 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 WebBrowser.maybeCompleteAuthSession();
 
+function getRedirectUri(): string {
+  if (__DEV__) {
+    // In Expo Go on a physical device, hostUri is the LAN IP:port (e.g. 192.168.1.5:8081)
+    // We must use that IP so the phone can actually reach the Expo server after OAuth redirects back
+    const hostUri = Constants.expoConfig?.hostUri ?? "localhost:8081";
+    return `exp://${hostUri}`;
+  }
+  return AuthSession.makeRedirectUri({ scheme: "pokerroll", path: "auth/callback" });
+}
+
 export default function SignInScreen() {
   const { colors, spacing, radius } = usePokerTheme();
   const insets = useSafeAreaInsets();
 
   async function signInWithGoogle() {
     try {
-      // Auto-detects correct URL: exp://x.x.x.x:8081 in Expo Go, pokerroll:// in production
-      const redirectTo = AuthSession.makeRedirectUri();
+      const redirectTo = getRedirectUri();
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
