@@ -1,13 +1,11 @@
 import { supabase } from "@/lib/supabase";
 import { usePokerTheme } from "@/hooks/use-poker-theme";
 import { PokerRollLogo } from "@/components/PokerRollLogo";
-import * as AppleAuthentication from "expo-apple-authentication";
 import * as AuthSession from "expo-auth-session";
-import * as Crypto from "expo-crypto";
 import * as WebBrowser from "expo-web-browser";
 import Constants from "expo-constants";
 import { router } from "expo-router";
-import { Alert, Platform, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
@@ -15,10 +13,13 @@ WebBrowser.maybeCompleteAuthSession();
 
 function getRedirectUri(): string {
   if (__DEV__) {
-    // In Expo Go on a physical device, hostUri is the LAN IP:port (e.g. 192.168.1.5:8081)
-    // We must use that IP so the phone can actually reach the Expo server after OAuth redirects back
-    const hostUri = Constants.expoConfig?.hostUri ?? "localhost:8081";
-    return `exp://${hostUri}`;
+    // In Expo SDK 50+, the dev server LAN IP lives in expoGoConfig.debuggerHost
+    // e.g. "192.168.1.5:8081" — this is the address the physical device can actually reach
+    const debuggerHost =
+      Constants.expoGoConfig?.debuggerHost ??
+      (Constants as any).manifest?.hostUri ??
+      "localhost:8081";
+    return `exp://${debuggerHost}`;
   }
   return AuthSession.makeRedirectUri({ scheme: "pokerroll", path: "auth/callback" });
 }
@@ -30,6 +31,7 @@ export default function SignInScreen() {
   async function signInWithGoogle() {
     try {
       const redirectTo = getRedirectUri();
+      Alert.alert("DEBUG — redirect URL", redirectTo); // temporary: remove after fix
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
@@ -66,35 +68,6 @@ export default function SignInScreen() {
     } catch (e) {
       console.error("Google sign in error", e);
       Alert.alert("Sign in failed", "Something went wrong. Please try again.");
-    }
-  }
-
-  async function signInWithApple() {
-    try {
-      const nonce = Crypto.randomUUID();
-      const hashedNonce = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        nonce
-      );
-      const credential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-        nonce: hashedNonce,
-      });
-      if (credential.identityToken) {
-        await supabase.auth.signInWithIdToken({
-          provider: "apple",
-          token: credential.identityToken,
-          nonce,
-        });
-        router.replace("/(tabs)");
-      }
-    } catch (e: any) {
-      if (e.code !== "ERR_REQUEST_CANCELED") {
-        console.error("Apple sign in error", e);
-      }
     }
   }
 
