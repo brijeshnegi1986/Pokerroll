@@ -23,12 +23,9 @@ const PATCHES = [
     replace: '$2',
     // Also fix the Function("name", fn()) call to Function("name") { fn() }
     postProcess: (content) => {
-      // Match: Function("randomUUID", randomUUID())
-      // Replace with: Function("randomUUID") { UUID().uuidString.lowercased() }
-      // Generic: replace Function("name", name()) with Function("name") { name() }
       return content.replace(
-        /Function\("(\w+)",\s*(\w+)\(\)\)/g,
-        'Function("$1") { $2() }'
+        /Function\("randomUUID",\s*randomUUID\(\)\)/,
+        'Function("randomUUID") { UUID().uuidString.lowercased() }'
       );
     },
   },
