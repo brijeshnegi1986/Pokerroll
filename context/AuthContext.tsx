@@ -3,6 +3,7 @@ import { Session, User } from "@supabase/supabase-js";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { createContext, useContext, useEffect, useState } from "react";
 import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
 import { Alert, Platform } from "react-native";
 
 type Profile = {
@@ -41,6 +42,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  async function handleDeepLink(url: string) {
+    if (!url.includes("auth/callback")) return;
+    try {
+      const parsed = new URL(url);
+      const code = parsed.searchParams.get("code");
+      const accessToken = parsed.searchParams.get("access_token") ?? new URLSearchParams(parsed.hash.slice(1)).get("access_token");
+      const refreshToken = parsed.searchParams.get("refresh_token") ?? new URLSearchParams(parsed.hash.slice(1)).get("refresh_token");
+
+      if (code) {
+        await supabase.auth.exchangeCodeForSession(code);
+      } else if (accessToken && refreshToken) {
+        await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+      }
+    } catch (e) {
+      console.error("Auth deep link error", e);
+    }
+  }
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -53,25 +72,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (session) fetchProfile(session.user.id);
       else setProfile(null);
     });
-
-    // Handle OAuth deep link callback (Google, etc.)
-    async function handleDeepLink(url: string) {
-      if (!url.includes("auth/callback")) return;
-      try {
-        const parsed = new URL(url);
-        const code = parsed.searchParams.get("code");
-        const accessToken = parsed.searchParams.get("access_token") ?? new URLSearchParams(parsed.hash.slice(1)).get("access_token");
-        const refreshToken = parsed.searchParams.get("refresh_token") ?? new URLSearchParams(parsed.hash.slice(1)).get("refresh_token");
-
-        if (code) {
-          await supabase.auth.exchangeCodeForSession(code);
-        } else if (accessToken && refreshToken) {
-          await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-        }
-      } catch (e) {
-        console.error("Auth deep link error", e);
-      }
-    }
 
     Linking.getInitialURL().then((url) => { if (url) handleDeepLink(url); });
     const linkSub = Linking.addEventListener("url", ({ url }) => handleDeepLink(url));
@@ -135,7 +135,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         Alert.alert("Sign in failed", error?.message ?? "Could not start Google sign in.");
         return;
       }
-      await Linking.openURL(data.url);
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      if (result.type === "success") {
+        await handleDeepLink(result.url);
+      }
     } catch (e: any) {
       Alert.alert("Sign in failed", e?.message ?? String(e));
     }
