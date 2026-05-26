@@ -96,7 +96,7 @@ function RootLayoutContent() {
           <Stack.Screen
             name="settings"
             options={{
-              title: "Settings",
+              title: "Game Settings",
               headerStyle: { backgroundColor: themeColors.bg.primary },
               headerTintColor: themeColors.text.primary,
               headerTitleStyle: { fontWeight: "700", fontSize: 17 },

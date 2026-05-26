@@ -1,6 +1,3 @@
-import { PaywallModal } from "@/components/PaywallModal";
-import { useSubscription } from "@/context/SubscriptionContext";
-import { getTrialStatus } from "@/hooks/use-trial";
 import { usePokerTheme } from "@/hooks/use-poker-theme";
 import { useThemeContext, type ThemePreference } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -52,15 +49,12 @@ const THEME_OPTIONS: {
 export default function SettingsScreen() {
   const { colors, spacing, radius, typography } = usePokerTheme();
   const { preference: themePreference, setPreference: setThemePreference } = useThemeContext();
-  const { isPro, restore } = useSubscription();
 
   const [defaultStakes, setDefaultStakes] = useState("1/2");
   const [defaultState, setDefaultState] = useState("NSW");
   const [defaultVenue, setDefaultVenue] = useState("");
   const [defaultView, setDefaultView] = useState("all");
   const [sessionCount, setSessionCount] = useState(0);
-  const [paywallVisible, setPaywallVisible] = useState(false);
-  const [restoring, setRestoring] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -126,18 +120,6 @@ export default function SettingsScreen() {
     );
   };
 
-  const handleRestore = async () => {
-    setRestoring(true);
-    try {
-      await restore();
-      Alert.alert("Restored", isPro ? "Your Pro subscription is active." : "No active subscription found.");
-    } catch {
-      Alert.alert("Restore failed", "Couldn't contact the store. Try again later.");
-    } finally {
-      setRestoring(false);
-    }
-  };
-
   const card = {
     backgroundColor: colors.bg.tertiary,
     borderRadius: 8,
@@ -159,88 +141,6 @@ export default function SettingsScreen() {
       contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing["3xl"] }}
       showsVerticalScrollIndicator={false}
     >
-      <PaywallModal visible={paywallVisible} onClose={() => setPaywallVisible(false)} />
-
-      {/* ── SUBSCRIPTION ── */}
-      <SectionLabel label="Subscription" colors={colors} spacing={spacing} typography={typography} />
-      <View style={card}>
-        {/* Plan status */}
-        {(() => {
-          const trial = getTrialStatus();
-          const inTrial = !isPro && trial.allowed;
-          const iconName = isPro ? "crown" : inTrial ? "timer-sand" : "crown-outline";
-          const iconColor = isPro ? "#7c3aed" : inTrial ? "#d97706" : colors.text.secondary;
-          const iconBg = isPro ? "#7c3aed18" : inTrial ? "#d9770618" : colors.bg.primary;
-          const iconBorder = isPro ? "#7c3aed44" : inTrial ? "#d9770644" : colors.border.default;
-          const planLabel = isPro ? "PokerRoll Pro" : inTrial ? "Free Trial" : "Free Plan";
-          const planSub = isPro
-            ? "All features unlocked"
-            : inTrial
-              ? `${trial.daysLeft} day${trial.daysLeft === 1 ? "" : "s"} remaining — AI features included`
-              : "AI features locked · 30 session limit";
-          return (
-            <View style={{
-              flexDirection: "row", alignItems: "center",
-              paddingHorizontal: spacing.lg, paddingVertical: spacing.md + 2, gap: spacing.md,
-            }}>
-              <View style={{
-                width: 38, height: 38, borderRadius: radius.sm,
-                backgroundColor: iconBg, borderWidth: 1, borderColor: iconBorder,
-                alignItems: "center", justifyContent: "center",
-              }}>
-                <MaterialCommunityIcons name={iconName} size={20} color={iconColor} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: colors.text.primary, ...typography.bodySm, fontWeight: "600" }}>
-                  {planLabel}
-                </Text>
-                <Text style={{ color: colors.text.tertiary, ...typography.caption, marginTop: 2 }}>
-                  {planSub}
-                </Text>
-              </View>
-              {!isPro && (
-                <TouchableOpacity
-                  onPress={() => setPaywallVisible(true)}
-                  style={{
-                    backgroundColor: inTrial ? "#d97706" : "#7c3aed",
-                    borderRadius: radius.full,
-                    paddingHorizontal: spacing.md,
-                    paddingVertical: spacing.xs,
-                  }}
-                >
-                  <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>
-                    {inTrial ? "Go Pro" : "Upgrade"}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          );
-        })()}
-
-        <View style={divider} />
-
-        {/* Restore purchases */}
-        <TouchableOpacity
-          onPress={handleRestore}
-          disabled={restoring}
-          activeOpacity={0.6}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            paddingHorizontal: spacing.lg,
-            paddingVertical: spacing.md,
-            opacity: restoring ? 0.6 : 1,
-          }}
-        >
-          <Text style={{ color: colors.text.primary, ...typography.body }}>Restore Purchases</Text>
-          {restoring
-            ? <ActivityIndicator size="small" color={colors.text.brand} />
-            : <Text style={{ color: colors.text.disabled, fontSize: 20, lineHeight: 24 }}>›</Text>
-          }
-        </TouchableOpacity>
-      </View>
-
       {/* ── THEME ── */}
       <SectionLabel label="Theme" colors={colors} spacing={spacing} typography={typography} />
       <View style={card}>
