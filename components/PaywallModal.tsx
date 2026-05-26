@@ -94,7 +94,10 @@ export function PaywallModal({ visible, onClose, feature }: Props) {
 
   async function handlePurchase() {
     const pkg = getPkg(selected);
-    if (!pkg) return;
+    if (!pkg) {
+      setError("Products are not available right now. Please try again later.");
+      return;
+    }
     setLoading(true);
     setError(null);
     const ok = await purchase(pkg.product.identifier);

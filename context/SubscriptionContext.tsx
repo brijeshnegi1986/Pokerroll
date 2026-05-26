@@ -36,24 +36,34 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!RC_CONFIGURED) return;
 
-    Purchases.setLogLevel(LOG_LEVEL.ERROR);
-    Purchases.configure({ apiKey });
+    let listener: { remove: () => void } | null = null;
 
-    async function init() {
+    async function setup() {
       try {
+        const isConfigured = await Purchases.isConfigured();
+        if (!isConfigured) {
+          Purchases.setLogLevel(LOG_LEVEL.ERROR);
+          Purchases.configure({ apiKey });
+        }
         const info = await Purchases.getCustomerInfo();
         setIsPro(checkPro(info));
         const all = await Purchases.getOfferings();
         setOfferings(all.current ?? null);
       } catch {}
       finally { setIsLoading(false); }
-    }
-    init();
 
-    const listener = Purchases.addCustomerInfoUpdateListener(info => {
-      setIsPro(checkPro(info));
-    });
-    return () => listener.remove();
+      try {
+        listener = Purchases.addCustomerInfoUpdateListener(info => {
+          setIsPro(checkPro(info));
+        });
+      } catch {}
+    }
+
+    setup();
+
+    return () => {
+      try { listener?.remove(); } catch {}
+    };
   }, []);
 
   function checkPro(info: CustomerInfo): boolean {
